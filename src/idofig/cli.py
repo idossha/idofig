@@ -255,6 +255,35 @@ def cmd_serve(args) -> int:
     return main(find_project())
 
 
+def cmd_rpc(args) -> int:
+    """One server method, once: the same code path an application's ``serve`` uses."""
+    import io
+
+    from .serve import Server
+
+    try:
+        params = json.loads(args.params) if args.params else {}
+    except ValueError as exc:
+        print(json.dumps({"error": {"message": f"params are not JSON: {exc}"}}))
+        return 2
+    if not isinstance(params, dict):
+        print(json.dumps({"error": {"message": "params must be a JSON object"}}))
+        return 2
+    server = Server(find_project(), out=io.StringIO())
+    server.dispatch({"jsonrpc": "2.0", "id": 1, "method": args.method, "params": params})
+    server.wait_idle()
+    replies = [json.loads(line) for line in server.out.getvalue().splitlines()]
+    answer = next((m for m in reversed(replies) if m.get("id") == 1), None)
+    if answer is None:
+        print(json.dumps({"error": {"message": f"{args.method} did not answer"}}))
+        return 1
+    if "error" in answer:
+        print(json.dumps({"error": answer["error"]}, ensure_ascii=False))
+        return 1
+    print(json.dumps({"result": answer["result"]}, ensure_ascii=False))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="idofig", description="Reproducible, editable publication figures.")
     ap.add_argument("--version", action="version", version=f"idofig {__version__}")
@@ -331,6 +360,11 @@ def parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("serve", help="JSON-RPC over stdio for applications")
     p.set_defaults(fn=cmd_serve)
+
+    p = sub.add_parser("rpc", help="call one server method once and print {result} or {error} as JSON")
+    p.add_argument("method")
+    p.add_argument("params", nargs="?", help="a JSON object")
+    p.set_defaults(fn=cmd_rpc)
     return ap
 
 

@@ -125,3 +125,18 @@ def test_restore_answers_the_replaced_text_so_redo_works(project):
                              "expect_sha": undo["sha"]}})
     assert "result" in _messages(out)[-1]
     assert S.load_figure(project.figure_json("fig-1"))["panels"][0]["place"]["x"] == 3
+
+
+def test_rpc_runs_one_server_method_and_answers_json(project):
+    import subprocess
+    import sys
+
+    build(project)
+    ok = subprocess.run([sys.executable, "-m", "idofig", "rpc", "status", '{"figures": ["fig-1"]}'],
+                        cwd=project.root, capture_output=True, text=True)
+    assert ok.returncode == 0 and json.loads(ok.stdout)["result"][0]["id"] == "fig-1"
+    bad = subprocess.run([sys.executable, "-m", "idofig", "rpc", "update_style",
+                          json.dumps({"figure": "fig-1", "panel": "a", "part": "main.xlabel",
+                                      "props": {"fontsize": "huge"}})],
+                         cwd=project.root, capture_output=True, text=True)
+    assert bad.returncode == 1 and json.loads(bad.stdout)["error"]["data"]["problems"]
