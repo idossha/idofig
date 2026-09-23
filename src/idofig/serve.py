@@ -23,7 +23,7 @@ move_style    {figure, panel, from, to}     → {before, after}   (re-attach a d
 restore       {path, text, expect_sha}  → restores a file for undo, only if unchanged since;
                                           answers the text it replaced (for redo)
 new_figure    {figure, width?, extra?}
-add_panel     {figure, panel, template?, script?, place?}
+add_panel     {figure, panel, template?, script?, image?, place?}   (image: a project file, placed as it is)
 check         {figures?, run?}          → CI's verdict: fresh, reproducible, within the journal's rules
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
@@ -332,7 +332,9 @@ class Server:
         compose(self.project, figure, write=True)
         return {"path": rel(path, self.project.root)}
 
-    def m_add_panel(self, rid, figure, panel, template="bar", script=None, place=None, letter="auto"):
+    def m_add_panel(self, rid, figure, panel, template="bar", script=None, place=None, letter="auto", image=None):
+        if image:
+            return scaffold.add_image_panel(self.project, figure, panel, image, place=place, letter=letter)
         return scaffold.add_panel(self.project, figure, panel, template=template, script=script, place=place,
                                   letter=letter)
 

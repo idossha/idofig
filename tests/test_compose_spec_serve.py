@@ -188,3 +188,23 @@ def test_a_figure_entry_carries_the_journals_findings(project):
     reply, _ = _rpc(srv, "figure", figure="fig-1")
     rules = reply["result"]["rules"]
     assert any("main.xlabel is 3 pt" in e for e in rules["errors"]), rules
+
+
+def test_an_image_panel_is_placed_at_its_own_aspect(project):
+    from idofig.images import natural_size
+    from idofig import scaffold
+
+    png = project.root / "figures/fig-1/scan.png"
+    png.write_bytes(PNG_1PX)
+    write(project.root / "figures/fig-1/wide.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><rect width="400" height="100"/></svg>')
+    assert natural_size(png) == (1.0, 1.0)
+    res = scaffold.add_image_panel(project, "fig-1", "scheme", "figures/fig-1/wide.svg")
+    doc = json.loads(read(project.figure_json("fig-1")))
+    place = next(p for p in doc["panels"] if p["id"] == "scheme")["place"]
+    assert res["image"] == "figures/fig-1/wide.svg" and abs(place["w"] / place["h"] - 4) < 0.05
+    try:
+        scaffold.add_image_panel(project, "fig-1", "outside", "../elsewhere.png")
+    except Exception as exc:  # noqa: BLE001
+        assert "outside the project" in str(exc)
+    else:
+        raise AssertionError("an image outside the project must be refused")

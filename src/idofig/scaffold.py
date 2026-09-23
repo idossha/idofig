@@ -68,6 +68,38 @@ def _next_letter(doc: dict) -> str | None:
     return None
 
 
+def add_image_panel(project: Project, fid: str, pid: str, image: str, *, place: dict | None = None,
+                    letter: str | None = "auto") -> dict:
+    """Register a panel that places an image file as it is — no producer. The file must be
+    inside the project (applications copy one in first); its natural aspect sizes the
+    default place, so it is never stretched."""
+    from .images import IMAGE_SUFFIXES, natural_size
+
+    check_id("panel", pid)
+    path = project.figure_json(fid)
+    doc = S.load_figure(path)
+    if S.panel_entry(doc, pid):
+        raise IdofigError(f"panel {pid!r} already exists in {fid}")
+    src = (project.root / image).resolve()
+    if project.root.resolve() not in src.parents:
+        raise IdofigError(f"{image} is outside the project; copy it into figures/{fid}/ first")
+    if src.suffix.lower() not in IMAGE_SUFFIXES:
+        raise IdofigError(f"{image}: an image panel takes {', '.join(sorted(IMAGE_SUFFIXES))}")
+    if not src.is_file():
+        raise IdofigError(f"{image} does not exist")
+    if place is None:
+        place = next_place(project, doc)
+        size = natural_size(src)
+        if size and size[0] > 0:
+            place["h"] = round(place["w"] * size[1] / size[0], 2)
+    entry = {"op": "panel.add", "id": pid, "place": place, "image": rel(src, project.root)}
+    lt = _next_letter(doc) if letter == "auto" else letter
+    if lt:
+        entry["letter"] = lt
+    S.update_figure(path, [entry])
+    return {"figure": fid, "panel": pid, "script": None, "created": None, "image": entry["image"]}
+
+
 def add_panel(project: Project, fid: str, pid: str, *, template: str = "bar", script: str | None = None,
               place: dict | None = None, letter: str | None = "auto") -> dict:
     """Register a panel and (unless ``script`` names an existing producer) write a producer for it."""

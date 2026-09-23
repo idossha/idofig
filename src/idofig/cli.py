@@ -168,6 +168,10 @@ def cmd_new(args) -> int:
 
 def cmd_add_panel(args) -> int:
     project = find_project()
+    if args.image:
+        res = scaffold.add_image_panel(project, args.figure, args.panel, args.image, place=_place(args.place))
+        print(f"panel {args.panel} places {res['image']} — `idofig build {args.figure}` composes it")
+        return 0
     res = scaffold.add_panel(project, args.figure, args.panel, template=args.template, script=args.script,
                              place=_place(args.place))
     if res["created"]:
@@ -334,6 +338,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("panel")
     p.add_argument("--template", default="bar", choices=scaffold.TEMPLATES)
     p.add_argument("--script", help="an existing producer script that will draw this panel too")
+    p.add_argument("--image", help="place this project file (svg, png, jpg, gif, webp) as the panel, as it is")
     p.add_argument("--place", help="x,y,w,h in mm")
     p.set_defaults(fn=cmd_add_panel)
 
