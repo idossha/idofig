@@ -23,6 +23,7 @@ restore       {path, text, expect_sha}  → restores a file for undo, only if un
                                           answers the text it replaced (for redo)
 new_figure    {figure, width?, extra?}
 add_panel     {figure, panel, template?, script?, place?}
+check         {figures?, run?}          → CI's verdict: fresh, reproducible, within the journal's rules
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
 journals                               → bundled journal presets
@@ -44,7 +45,7 @@ from . import props as P
 from . import scaffold
 from . import spec as S
 from ._version import __version__
-from .build import build, figure_status, status
+from .build import build, check, figure_status, status
 from .compose import compose
 from .errors import IdofigError, SpecError
 from .fsutil import read_json, rel, sha256_file, write_atomic
@@ -305,6 +306,9 @@ class Server:
     def m_add_panel(self, rid, figure, panel, template="bar", script=None, place=None, letter="auto"):
         return scaffold.add_panel(self.project, figure, panel, template=template, script=script, place=place,
                                   letter=letter)
+
+    def m_check(self, rid, figures=None, run=True):
+        return check(self.project, figures, run=bool(run)).to_json()
 
     def m_parts(self, rid, figure, panel):
         return read_json(self.project.panel_dir(figure, panel) / "manifest.json").get("parts", {})
