@@ -161,3 +161,21 @@ def test_a_project_style_cannot_crop_a_panel_or_turn_its_text_into_paths(project
     width = float(re.search(r'<svg[^>]*\bwidth="([\d.]+)pt"', svg).group(1))
     assert abs(width - 88 / 25.4 * 72) < 0.05
     assert "<text" in svg
+
+
+def test_a_font_matplotlib_ships_is_not_flagged_but_a_system_font_is(project):
+    """DejaVu Sans Mono comes with matplotlib (the lock records its version), so it lays out
+    the same everywhere; a font found only on this machine does not."""
+    path = project.root / "figures/fig-1/make.py"
+    text = read(path).replace(
+        "idf.save(p)",
+        'for f in p.values():\n    f.text(0.1, 0.1, "mono", family="DejaVu Sans Mono")\n'
+        '    f.text(0.2, 0.2, "elsewhere", family="Some Font Nobody Has")\nidf.save(p)',
+    )
+    path.write_text(text, encoding="utf-8")
+    assert build(project).ok
+    import json
+
+    warnings = " ".join(json.loads(read(project.root / "figures/fig-1/panels/a/manifest.json")).get("warnings", []))
+    assert "Some Font Nobody Has" in warnings
+    assert "DejaVu Sans Mono" not in warnings

@@ -212,6 +212,18 @@ def _axes_info(ax, renderer, height_pt: float) -> dict:
     }
 
 
+def _ships_with_matplotlib(path: str) -> bool:
+    """A face from matplotlib's own mpl-data (DejaVu Sans, DejaVu Sans Mono, …): the same file on
+    every machine with the same matplotlib, which the lock records — as reproducible as ours."""
+    import matplotlib
+
+    try:
+        return os.path.commonpath([os.path.realpath(path), os.path.realpath(matplotlib.get_data_path())]) == \
+            os.path.realpath(matplotlib.get_data_path())
+    except ValueError:
+        return False
+
+
 def _check_fonts(table) -> list[str]:
     from matplotlib import font_manager
 
@@ -231,7 +243,7 @@ def _check_fonts(table) -> list[str]:
                     continue
                 try:
                     path = font_manager.findfont(f, fallback_to_default=False)
-                    if "LiberationSans" not in os.path.basename(path):
+                    if "LiberationSans" not in os.path.basename(path) and not _ships_with_matplotlib(path):
                         bad.add(f)
                 except ValueError:
                     bad.add(f)
