@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "jneurosci",
+  "name": "Journal of Neuroscience",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": null,
+    "onehalf": null,
+    "double": null
+  },
+  "maxHeightMm": null,
+  "minFontPt": null,
+  "maxFontPt": null,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [],
+    "rasterAccepted": [],
+    "minDpi": null
+  },
+  "panelLabel": {
+    "letterCase": null,
+    "weight": null,
+    "wrapper": null
+  },
+  "sources": [
+    "https://www.jneurosci.org/content/information-authors"
+  ]
+}

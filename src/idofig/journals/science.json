@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "science",
+  "name": "Science",
+  "lastVerified": "2026-08-13",
+  "widthPresetsMm": {
+    "single": 90,
+    "onehalf": null,
+    "double": 183
+  },
+  "maxHeightMm": null,
+  "minFontPt": 6,
+  "maxFontPt": 9,
+  "lineWeightPt": {
+    "min": 0.28,
+    "max": null
+  },
+  "preferredFontFamilies": [
+    "Arial",
+    "Helvetica"
+  ],
+  "formats": {
+    "vectorPreferred": [
+      "pdf",
+      "eps",
+      "ai"
+    ],
+    "rasterAccepted": [
+      "tiff"
+    ],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": "upper",
+    "weight": "bold",
+    "wrapper": "none"
+  },
+  "sources": [
+    "https://www.science.org/content/page/instructions-preparing-initial-manuscript",
+    "https://www.science.org/content/page/instructions-preparing-revised-manuscript",
+    "https://www.science.org/cms/asset/67f37ac8-4d02-4625-8a05-230568cb8323/author_prep_guide_2025.pdf"
+  ]
+}

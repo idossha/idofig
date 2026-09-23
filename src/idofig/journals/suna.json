@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "suna",
+  "name": "SUNA style",
+  "lastVerified": "2026-08-19",
+  "widthPresetsMm": {
+    "single": 127,
+    "onehalf": 152,
+    "double": 178
+  },
+  "maxHeightMm": null,
+  "minFontPt": 7,
+  "maxFontPt": 12,
+  "lineWeightPt": {
+    "min": 0.5,
+    "max": 2
+  },
+  "preferredFontFamilies": [
+    "Arial",
+    "Helvetica"
+  ],
+  "formats": {
+    "vectorPreferred": [
+      "svg",
+      "pdf",
+      "eps"
+    ],
+    "rasterAccepted": [
+      "png",
+      "tiff"
+    ],
+    "minDpi": 600
+  },
+  "panelLabel": {
+    "letterCase": "upper",
+    "weight": "bold",
+    "wrapper": "none"
+  },
+  "sources": []
+}

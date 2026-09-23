@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "id": "nature",
+  "name": "Nature",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": 89,
+    "onehalf": null,
+    "double": 183
+  },
+  "maxHeightMm": 247,
+  "minFontPt": 5,
+  "maxFontPt": 7,
+  "lineWeightPt": {
+    "min": 0.25,
+    "max": 1
+  },
+  "preferredFontFamilies": [
+    "Helvetica",
+    "Arial"
+  ],
+  "formats": {
+    "vectorPreferred": [
+      "ai",
+      "eps",
+      "pdf"
+    ],
+    "rasterAccepted": [
+      "psd",
+      "tiff",
+      "jpg"
+    ],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": "lower",
+    "weight": "bold",
+    "wrapper": "none"
+  },
+  "sources": [
+    "https://www.nature.com/nature/for-authors/final-submission",
+    "https://www.nature.com/nature/for-authors/formatting-guide"
+  ]
+}

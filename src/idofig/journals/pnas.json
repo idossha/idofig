@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "pnas",
+  "name": "PNAS",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": 87,
+    "onehalf": null,
+    "double": null
+  },
+  "maxHeightMm": null,
+  "minFontPt": 6,
+  "maxFontPt": null,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [
+      "eps",
+      "pdf"
+    ],
+    "rasterAccepted": [
+      "tiff"
+    ],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": null,
+    "weight": null,
+    "wrapper": null
+  },
+  "sources": [
+    "https://www.pnas.org/pb-assets/authors/digitalart-1675347574760.pdf"
+  ]
+}

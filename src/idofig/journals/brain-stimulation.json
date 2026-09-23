@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "id": "brain-stimulation",
+  "name": "Brain Stimulation",
+  "lastVerified": "2026-08-17",
+  "widthPresetsMm": {
+    "single": 90,
+    "onehalf": null,
+    "double": 190
+  },
+  "maxHeightMm": null,
+  "minFontPt": null,
+  "maxFontPt": null,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [
+      "eps",
+      "pdf"
+    ],
+    "rasterAccepted": [
+      "tiff",
+      "jpg",
+      "png"
+    ],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": null,
+    "weight": null,
+    "wrapper": null
+  },
+  "sources": [
+    "https://www.sciencedirect.com/journal/brain-stimulation/publish/guide-for-authors"
+  ]
+}

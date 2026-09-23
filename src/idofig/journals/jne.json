@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "jne",
+  "name": "Journal of Neural Engineering",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": 85,
+    "onehalf": null,
+    "double": 150
+  },
+  "maxHeightMm": null,
+  "minFontPt": 8,
+  "maxFontPt": 12,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [],
+    "rasterAccepted": [],
+    "minDpi": null
+  },
+  "panelLabel": {
+    "letterCase": "lower",
+    "weight": null,
+    "wrapper": "parens"
+  },
+  "sources": [
+    "https://publishingsupport.iopscience.iop.org/journals/journal-of-neural-engineering/about-journal-neural-engineering/",
+    "https://publishingsupport.iopscience.iop.org/questions/style-guide-journal-articles/"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "sleep",
+  "name": "SLEEP",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": null,
+    "onehalf": null,
+    "double": null
+  },
+  "maxHeightMm": null,
+  "minFontPt": null,
+  "maxFontPt": null,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [
+      "eps",
+      "pdf"
+    ],
+    "rasterAccepted": [
+      "tif"
+    ],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": null,
+    "weight": null,
+    "wrapper": null
+  },
+  "sources": [
+    "https://academic.oup.com/sleep/pages/author-guidelines"
+  ]
+}

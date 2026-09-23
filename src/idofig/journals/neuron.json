@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "neuron",
+  "name": "Neuron",
+  "lastVerified": "2026-08-15",
+  "widthPresetsMm": {
+    "single": null,
+    "onehalf": null,
+    "double": null
+  },
+  "maxHeightMm": 200,
+  "minFontPt": null,
+  "maxFontPt": null,
+  "lineWeightPt": {
+    "min": null,
+    "max": null
+  },
+  "preferredFontFamilies": null,
+  "formats": {
+    "vectorPreferred": [],
+    "rasterAccepted": [],
+    "minDpi": 300
+  },
+  "panelLabel": {
+    "letterCase": null,
+    "weight": null,
+    "wrapper": null
+  },
+  "sources": [
+    "https://www.cell.com/information-for-authors/figure-guidelines",
+    "https://www.cell.com/pb-assets/journals/EM/MasterFFCs/NEURONFFC-1766175479360.pdf"
+  ]
+}
