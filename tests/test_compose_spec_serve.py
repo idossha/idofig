@@ -178,3 +178,13 @@ def test_a_narrower_figure_keeps_its_layout(project):
     # scale_panels: false leaves the layout to the caller
     reply, _ = _rpc(srv, "update_figure", figure="fig-1", ops=[{"op": "width", "scale_panels": False, **width_before}])
     assert [p["place"] for p in reply["result"]["doc"]["panels"]] == places
+
+
+def test_a_figure_entry_carries_the_journals_findings(project):
+    build(project)
+    S.update_style(project.panel_dir("fig-1", "a") / "style.json", "main.xlabel", {"fontsize": 3})
+    build(project)
+    srv = Server(project, out=io.StringIO())
+    reply, _ = _rpc(srv, "figure", figure="fig-1")
+    rules = reply["result"]["rules"]
+    assert any("main.xlabel is 3 pt" in e for e in rules["errors"]), rules

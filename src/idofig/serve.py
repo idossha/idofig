@@ -12,7 +12,7 @@ Methods
 -------
 hello                                   → version, root, figures dir, journal, python
 workspace                               → every figure: document, manifests, styles, status
-figure        {figure}                  → one figure, as in workspace
+figure        {figure}                  → one figure, as in workspace (with `rules`: the journal's findings)
 status        {figures?}                → figure statuses
 compose       {figure}                  → compose result (figure.svg written)
 build         {figures?, only?, force?, include_expensive?, retry_failed?}  → build report
@@ -47,7 +47,7 @@ from . import props as P
 from . import scaffold
 from . import spec as S
 from ._version import __version__
-from .build import build, check, figure_status, status
+from .build import build, check, compliance, figure_status, status
 from .compose import compose
 from .errors import IdofigError, SpecError
 from .fsutil import read_json, rel, sha256_file, write_atomic
@@ -170,6 +170,10 @@ class Server:
             journal = J.load(doc.get("journal") or self.project.journal, str(self.project.root))
             entry["journal"] = journal.get("id") or doc.get("journal") or self.project.journal
             entry["width_mm"] = J.width_mm(journal, doc["width"])
+            # The journal's figure rules on what matplotlib drew (the check CI runs, minus
+            # the rebuild): an editor shows them beside the figure as it is edited.
+            errors, warnings = compliance(self.project, fid, doc)
+            entry["rules"] = {"errors": errors, "warnings": warnings}
         except IdofigError as exc:
             entry["error"] = str(exc)
         entry["status"] = figure_status(self.project, fid).to_json()
