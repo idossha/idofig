@@ -26,6 +26,7 @@ add_panel     {figure, panel, template?, script?, place?}
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
 journals                               → bundled journal presets
+props                                   → the style property table, per part kind
 shutdown
 """
 
@@ -315,6 +316,9 @@ class Server:
 
     def m_journals(self, rid):
         return [J.load(j) for j in J.bundled_ids()]
+
+    def m_props(self, rid):
+        return P.describe()
 
     def m_validate_style(self, rid, kind, props, group=False):
         return P.validate(kind, props, group=group)

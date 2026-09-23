@@ -317,6 +317,17 @@ def _find(items: list, key: str, where: str) -> dict:
 
 def apply_ops(doc: dict, ops: list[dict]) -> dict:
     """Apply edit operations to a copy of ``doc``. Validation happens after, on the result."""
+    if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
+        raise SpecError("figure.json", ["ops must be a list of objects"])
+    try:
+        return _apply_ops(doc, ops)
+    except KeyError as exc:
+        raise SpecError("figure.json", [f"operation is missing the field {exc.args[0]!r}"]) from None
+    except (TypeError, ValueError) as exc:
+        raise SpecError("figure.json", [f"bad operation: {exc}"]) from None
+
+
+def _apply_ops(doc: dict, ops: list[dict]) -> dict:
     out = copy.deepcopy(doc)
     out.setdefault("producers", [])
     out.setdefault("panels", [])

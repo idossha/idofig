@@ -38,7 +38,16 @@ def is_color(value: Any) -> bool:
     )
 
 
-def _num(lo: float | None = None, hi: float | None = None) -> Callable[[Any], str | None]:
+Check = Callable[[Any], "str | None"]
+
+
+def _described(check: Check, **spec: Any) -> Check:
+    """Attach a JSON description, so an application can build its editors from this table."""
+    check.spec = {k: v for k, v in spec.items() if v is not None}  # type: ignore[attr-defined]
+    return check
+
+
+def _num(lo: float | None = None, hi: float | None = None, unit: str | None = None) -> Check:
     def check(v: Any) -> str | None:
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             return "must be a number"
@@ -48,41 +57,48 @@ def _num(lo: float | None = None, hi: float | None = None) -> Callable[[Any], st
             return f"must be ≤ {hi}"
         return None
 
-    return check
+    return _described(check, type="number", min=lo, max=hi, unit=unit)
 
 
-def _color(v: Any) -> str | None:
+def _color_check(v: Any) -> str | None:
     return None if is_color(v) else "must be a colour (#rrggbb, a matplotlib colour name, 'C0'…'C9' or 'none')"
 
 
-def _bool(v: Any) -> str | None:
+def _bool_check(v: Any) -> str | None:
     return None if isinstance(v, bool) else "must be true or false"
 
 
-def _str(v: Any) -> str | None:
+def _str_check(v: Any) -> str | None:
     return None if isinstance(v, str) else "must be text"
 
 
-def _enum(options: set[str]) -> Callable[[Any], str | None]:
+def _enum(options: set[str]) -> Check:
     def check(v: Any) -> str | None:
         return None if isinstance(v, str) and v in options else f"must be one of {sorted(options)}"
 
-    return check
+    return _described(check, type="enum", options=sorted(options))
 
 
-def _weight(v: Any) -> str | None:
+def _weight_check(v: Any) -> str | None:
     if isinstance(v, (int, float)) and not isinstance(v, bool) and 100 <= v <= 900:
         return None
     return None if isinstance(v, str) and v in WEIGHTS else "must be a font weight (e.g. 'bold' or 100–900)"
 
 
-def _cmap(v: Any) -> str | None:
+def _cmap_check(v: Any) -> str | None:
     return None if isinstance(v, str) and re.match(r"^[A-Za-z0-9_.:-]+$", v) else "must be a colormap name"
 
 
+_color = _described(_color_check, type="color")
+_bool = _described(_bool_check, type="bool")
+_str = _described(_str_check, type="text")
+_weight = _described(_weight_check, type="enum", options=["normal", "bold", "light", "semibold", "heavy"])
+_cmap = _described(_cmap_check, type="text")
+
+
 _ALPHA = _num(0, 1)
-_WIDTH = _num(0, 100)
-_SIZE = _num(0.1, 500)
+_WIDTH = _num(0, 100, "pt")
+_SIZE = _num(0.1, 500, "pt")
 
 PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     "text": {
@@ -91,7 +107,7 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     },
     "line": {
         "color": _color, "linewidth": _WIDTH, "linestyle": _enum(LINESTYLES), "alpha": _ALPHA, "visible": _bool,
-        "marker": _enum(MARKERS), "markersize": _num(0, 100), "markerfacecolor": _color, "markeredgecolor": _color,
+        "marker": _enum(MARKERS), "markersize": _num(0, 100, "pt"), "markerfacecolor": _color, "markeredgecolor": _color,
     },
     "patch": {
         "facecolor": _color, "edgecolor": _color, "color": _color, "linewidth": _WIDTH,
@@ -116,6 +132,15 @@ SINGLE_ONLY = {"text", "title"}
 
 def allowed(kind: str) -> list[str]:
     return sorted(PROPS.get(kind, {}))
+
+
+def describe() -> dict:
+    """The property table as JSON: ``{kinds: {kind: {prop: {type, min?, max?, unit?, options?}}}, single_only}``."""
+    return {
+        "kinds": {kind: {prop: dict(check.spec) for prop, check in table.items()}  # type: ignore[attr-defined]
+                  for kind, table in PROPS.items()},
+        "single_only": sorted(SINGLE_ONLY),
+    }
 
 
 def validate(kind: str, props: dict, *, group: bool = False) -> list[str]:
