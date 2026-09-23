@@ -144,6 +144,7 @@ class PanelStatus:
     id: str
     state: str  # fresh | stale | missing | image | orphan | failed
     producer: str | None = None
+    cost: str | None = None  # the producer's: cheap (apps may rebuild it automatically) or expensive
     reasons: list[str] = field(default_factory=list)
     detached_styles: list[str] = field(default_factory=list)
     invalid_styles: list[dict] = field(default_factory=list)
@@ -250,7 +251,8 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
                                          reasons=[] if ok else [f"{pn['image']} not found"]))
             continue
         pr = S.producer_of(doc, pid)
-        ps = PanelStatus(pid, "fresh", producer=pr["id"] if pr else None)
+        ps = PanelStatus(pid, "fresh", producer=pr["id"] if pr else None,
+                         cost=pr.get("cost", "cheap") if pr else None)
         pdir = project.panel_dir(fid, pid)
         svg_sha = sha256_file(pdir / "panel.svg")
         entry = lock["panels"].get(pid)
