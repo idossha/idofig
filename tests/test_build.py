@@ -146,3 +146,18 @@ def test_check_enforces_the_journal_font_floor(project):
     build(project)
     rep = check(project, run=False)
     assert any("main.xlabel is 4 pt; Nature requires at least 5 pt" in e for e in rep.errors)
+
+
+def test_a_project_style_cannot_crop_a_panel_or_turn_its_text_into_paths(project):
+    """A project's own rc (``savefig.bbox = "tight"``, text as paths) must not change what a
+    panel is: its printed size, with text the checker can measure (rules 3 and 4)."""
+    path = project.root / "figures/fig-1/make.py"
+    text = read(path).replace("idf.save(p)", 'import matplotlib\nmatplotlib.rcParams.update({"savefig.bbox": "tight", "svg.fonttype": "path"})\nidf.save(p)')
+    path.write_text(text, encoding="utf-8")
+    assert build(project).ok
+    svg = read(project.root / "figures/fig-1/panels/a/panel.svg")
+    import re
+
+    width = float(re.search(r'<svg[^>]*\bwidth="([\d.]+)pt"', svg).group(1))
+    assert abs(width - 88 / 25.4 * 72) < 0.05
+    assert "<text" in svg

@@ -239,6 +239,10 @@ def _check_fonts(table) -> list[str]:
             for f in sorted(bad)]
 
 
+# The settings a saved panel depends on for its size, its text and its bytes (rule 4).
+SAVE_RC = {"svg.fonttype": "none", "svg.hashsalt": "idofig", "savefig.bbox": None, "savefig.pad_inches": 0}
+
+
 def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str]:
     from . import naming, styling
     from .svgpost import finish_panel_svg
@@ -255,7 +259,14 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
     styling.apply(table, style, sreport, final=True)
 
     buf = StringIO()
-    fig.savefig(buf, format="svg", metadata={"Creator": None, "Date": None, "Format": None, "Type": None})
+    # A panel is its printed size and its text stays text, whatever the script set: a project
+    # style that turns on ``savefig.bbox = "tight"`` would otherwise crop the panel (rule 3),
+    # and ``svg.fonttype = "path"`` would hide every font size from the checker.
+    import matplotlib
+
+    with matplotlib.rc_context(SAVE_RC):
+        fig.savefig(buf, format="svg", bbox_inches=fig.bbox_inches,
+                    metadata={"Creator": None, "Date": None, "Format": None, "Type": None})
     width_pt = fig.get_figwidth() * PT_PER_IN
     height_pt = fig.get_figheight() * PT_PER_IN
     renderer = fig.canvas.get_renderer()
