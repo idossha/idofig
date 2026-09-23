@@ -327,7 +327,42 @@ def apply_ops(doc: dict, ops: list[dict]) -> dict:
         raise SpecError("figure.json", [f"bad operation: {exc}"]) from None
 
 
+# The fields each operation takes. A misspelt field is refused rather than ignored: an edit
+# sent as {"op": "annotation.update", "set": …} used to succeed and change nothing, which is
+# the silent kind of wrong an agent cannot see.
+OP_FIELDS: dict[str, set[str]] = {
+    "place": {"panel", "x", "y", "w", "h"},
+    "letter": {"panel", "letter"},
+    "panel.add": {"id", "letter", "place", "image"},
+    "panel.remove": {"id"},
+    "producer.set": {"id", "run", "inputs", "panels", "cost", "timeout_s"},
+    "producer.remove": {"id"},
+    "annotation.add": {"annotation"},
+    "annotation.update": {"id", "patch"},
+    "annotation.remove": {"id"},
+    "width": {"preset", "mm"},
+    "height": {"mm"},
+    "letters": {"patch"},
+    "journal": {"journal"},
+    "app.set": {"key", "value"},
+}
+
+
+def _check_op_fields(op: dict) -> None:
+    kind = op.get("op")
+    allowed = OP_FIELDS.get(kind)  # type: ignore[arg-type]
+    if allowed is None:
+        raise SpecError("figure.json", [f"unknown operation {kind!r}"])
+    extra = sorted(k for k in op if k != "op" and k not in allowed)
+    if extra:
+        raise SpecError("figure.json", [
+            f"operation {kind!r} does not take {', '.join(repr(k) for k in extra)}; "
+            f"it takes {', '.join(sorted(allowed))}"])
+
+
 def _apply_ops(doc: dict, ops: list[dict]) -> dict:
+    for op in ops:
+        _check_op_fields(op)
     out = copy.deepcopy(doc)
     out.setdefault("producers", [])
     out.setdefault("panels", [])

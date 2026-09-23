@@ -50,6 +50,10 @@ def test_annotations_anchor_to_parts_and_data_and_detach(project):
     ])
     res = compose(project, "fig-1")
     assert 'id="sig" data-idofig-annotation="bracket"' in res.svg
+    # equal short legs: both leg ends sit at the same height, whatever the two bars' heights
+    d = re.search(r'id="sig" data-idofig-annotation="bracket"><path d="([^"]+)"', res.svg).group(1)
+    ys = [float(v) for v in re.findall(r"[ML] [-\d.]+ ([-\d.]+)", d)]
+    assert ys[0] == ys[3] and ys[1] == ys[2] and ys[0] > ys[1]
     assert ">peak</text>" in res.svg
     assert res.detached == [{"id": "lost", "reason": "part 'main.series.missing' is not in panel 'a' any more"}]
 
@@ -141,3 +145,17 @@ def test_locate_finds_the_line_that_makes_a_part(project):
     assert hits and hits[0]["file"] == "figures/fig-1/make.py" and "set_xlabel" in hits[0]["text"]
     hits = locate(project, "fig-1", "a", "main.series.trend")
     assert hits and 'label="trend"' in hits[0]["text"]
+
+
+def test_a_misspelt_operation_field_is_refused_not_ignored(project):
+    before = read(project.figure_json("fig-1"))
+    for op in ({"op": "annotation.update", "id": "x", "set": {"text": "y"}},
+               {"op": "place", "panel": "a", "width": 50},
+               {"op": "no.such.op"}):
+        try:
+            S.update_figure(project.figure_json("fig-1"), [op])
+        except S.SpecError as exc:
+            assert "does not take" in str(exc) or "unknown operation" in str(exc)
+        else:
+            raise AssertionError(f"expected refusal of {op}")
+    assert read(project.figure_json("fig-1")) == before

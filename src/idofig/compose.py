@@ -259,14 +259,17 @@ def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str |
     if t == "bracket":
         gap = s["gap_mm"] * PT_PER_MM
         leg = s["leg_mm"] * PT_PER_MM
+        # Both legs are `leg_mm` long and the bar clears the outer anchor by `gap_mm`: the
+        # significance-bracket convention. Legs that reached down to each anchor drew a long
+        # line into the short bar of an unequal pair and read as a data mark.
         if a.get("side", "above") == "above":
             ybar = min(y1, y2) - gap - leg
-            d = f"M {fmt(x1)} {fmt(y1 - gap)} L {fmt(x1)} {fmt(ybar)} L {fmt(x2)} {fmt(ybar)} L {fmt(x2)} {fmt(y2 - gap)}"
             ly = ybar - 1.0
         else:
             ybar = max(y1, y2) + gap + leg
-            d = f"M {fmt(x1)} {fmt(y1 + gap)} L {fmt(x1)} {fmt(ybar)} L {fmt(x2)} {fmt(ybar)} L {fmt(x2)} {fmt(y2 + gap)}"
             ly = ybar + s["size_pt"]
+        yleg = ybar + leg if a.get("side", "above") == "above" else ybar - leg
+        d = f"M {fmt(x1)} {fmt(yleg)} L {fmt(x1)} {fmt(ybar)} L {fmt(x2)} {fmt(ybar)} L {fmt(x2)} {fmt(yleg)}"
         label = ""
         if a.get("label"):
             label = (f'<text x="{fmt((x1 + x2) / 2)}" y="{fmt(ly)}" style="{_font(s["size_pt"], s["weight"], color)}; '

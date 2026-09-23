@@ -69,7 +69,7 @@ Configuration (`idofig.toml`, or `[tool.idofig]` in `pyproject.toml`):
 | `text` | `at`, `text`, `align: start\|middle\|end` |
 | `arrow` | `from`, `to`, `head: end\|start\|both\|none` (default `end`) |
 | `line` | `from`, `to`, `head` (default `none`) |
-| `bracket` | `from`, `to`, `label?`, `side: above\|below` |
+| `bracket` | `from`, `to`, `label?`, `side: above\|below`; the bar clears the outer anchor by `gap_mm`, both legs are `leg_mm` |
 | `box` | `from`, `to` (opposite corners) |
 
 `style`: `color`, `fill`, `width_pt`, `size_pt`, `weight: normal|bold`, `dash: [pt…]`,
