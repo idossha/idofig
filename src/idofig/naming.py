@@ -353,5 +353,6 @@ def assign_ticks(fig: Figure, t: PartTable) -> None:
                         if n:
                             names.append(n)
             if names:
-                t.add_group(f"{p}.{letter}tick.*", [n for n in names if f".{letter}tick." in n],
-                            "ticks", "semantic", p)
+                # Both sides: a colorbar draws only label2 (`ytick2.*`), and "all the y tick
+                # labels" means those too — a group of the label1 side alone was empty there.
+                t.add_group(f"{p}.{letter}tick.*", names, "ticks", "semantic", p)

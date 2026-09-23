@@ -152,3 +152,15 @@ def test_a_renamed_part_detaches_its_override_and_move_style_reattaches_it(proje
     a = next(p for p in status(project)[0].to_json()["panels"] if p["id"] == "a")
     assert not a.get("detached_styles")
     assert "stroke: #009e73" in read(project.panel_dir("fig-1", "a") / "panel.svg")
+
+
+def test_a_colorbar_tick_group_holds_its_ticks(project):
+    src = read(project.root / "figures/fig-1/make.py")
+    src = src.replace("    ax.legend()\n", "    ax.legend()\n    im = ax.imshow([[0, 1], [2, 3]], extent=(0, 1, 0, 1))\n    idf.colorbar(im, ax=ax, name=\"level\")\n")
+    (project.root / "figures/fig-1/make.py").write_text(src)
+    rep = build(project)
+    assert rep.ok, rep.runs[0].error
+    parts = manifest(project)["parts"]
+    group = parts["cbar.level.ytick.*"]
+    assert group["group"] and group["members"]
+    assert all(m.startswith("cbar.level.ytick") for m in group["members"])
