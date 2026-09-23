@@ -8,7 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -52,16 +54,42 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_SHA_CACHE: dict[str, tuple[tuple[int, int, int], str]] = {}
+_SETTLE_NS = 2_000_000_000
+
+
 def sha256_file(path: Path | str) -> str | None:
-    """The file's sha256, or None when it does not exist."""
+    """The file's sha256, or None when it does not exist.
+
+    ``status`` hashes every input of every producer, and a server calls it after each
+    file change, so digests are cached by (size, mtime, inode). A file modified in the
+    last two seconds is always re-read: some filesystems keep mtimes to the second, and
+    two same-size edits inside one tick must not look like one.
+    """
+    try:
+        st = os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if stat.S_ISDIR(st.st_mode):
+        return None
+    key = os.path.abspath(path)
+    sig = (st.st_size, st.st_mtime_ns, st.st_ino)
+    hit = _SHA_CACHE.get(key)
+    if hit is not None and hit[0] == sig:
+        return hit[1]
     try:
         h = hashlib.sha256()
         with open(path, "rb") as fh:
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
-        return h.hexdigest()
     except (FileNotFoundError, IsADirectoryError):
         return None
+    digest = h.hexdigest()
+    if time.time_ns() - st.st_mtime_ns > _SETTLE_NS:
+        if len(_SHA_CACHE) > 20000:
+            _SHA_CACHE.clear()
+        _SHA_CACHE[key] = (sig, digest)
+    return digest
 
 
 def sha256_json(obj: Any) -> str:

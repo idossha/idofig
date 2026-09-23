@@ -134,6 +134,10 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
     if not isinstance(doc, dict):
         return ["the file must contain a JSON object"]
     p: list[str] = []
+    if doc.get("schema") is None and ("widthPreset" in doc or "namespace" in doc):
+        return ["this is a figure.json from SUNA 1.x (no \"schema\": 2). idofig does not convert it: "
+                "rebuild the figure with producers (see docs/producers.md); its figure.svg keeps working "
+                "in the manuscript until then"]
     if doc.get("schema") != FIGURE_SCHEMA:
         p.append(f"schema must be {FIGURE_SCHEMA} (found {doc.get('schema')!r})")
     fid = doc.get("id")

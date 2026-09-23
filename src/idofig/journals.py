@@ -24,12 +24,19 @@ def bundled_ids() -> tuple[str, ...]:
     return tuple(sorted(p.name[:-5] for p in files.iterdir() if p.name.endswith(".json")))
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=None)
+def _bundled(ref: str) -> str:
+    return resources.files("idofig").joinpath("journals", f"{ref}.json").read_text(encoding="utf-8")
+
+
 def load(ref: str, root: str | None = None) -> dict:
-    """A preset by bundled id, or by path (absolute, or relative to the project root)."""
+    """A preset by bundled id, or by path (absolute, or relative to the project root).
+
+    Paths are read every time: a long-running server must see an edited preset.
+    Every call returns a fresh dict, so callers may modify it.
+    """
     if ref in bundled_ids():
-        text = resources.files("idofig").joinpath("journals", f"{ref}.json").read_text(encoding="utf-8")
-        return json.loads(text)
+        return json.loads(_bundled(ref))
     path = Path(ref)
     if not path.is_absolute() and root:
         path = Path(root) / path

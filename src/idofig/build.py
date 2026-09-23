@@ -186,16 +186,27 @@ def _failures(project: Project) -> dict:
         return {}
 
 
-def _record_failure(project: Project, fid: str, prid: str, message: str | None) -> None:
+def _record_failure(project: Project, fid: str, prid: str, message: str | None,
+                    fingerprint: str | None = None) -> None:
     state = _failures(project)
     fig = state.setdefault(fid, {})
     if message is None:
+        if prid not in fig:
+            if not fig:
+                state.pop(fid, None)
+            return
         fig.pop(prid, None)
         if not fig:
             state.pop(fid, None)
     else:
-        fig[prid] = {"error": message[-4000:], "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        fig[prid] = {"error": message[-4000:], "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                     "fingerprint": fingerprint}
     write_json(project.state_dir / "state.json", state)
+
+
+def _fingerprint(shared: str, own: dict[str, dict]) -> str:
+    """Everything a producer's run depended on: a failure is only final for these inputs."""
+    return sha256_json({"shared": shared, "own": own})
 
 
 def _describe(before: dict, now: dict) -> list[str]:
@@ -247,8 +258,12 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
             ps.state = "orphan" if svg_sha else "missing"
             ps.reasons.append("no producer draws this panel")
         elif pr["id"] in failures:
-            ps.state = "failed"
-            ps.error = failures[pr["id"]]["error"]
+            failure = failures[pr["id"]]
+            ps.error = failure["error"]
+            now = _fingerprint(_shared(pr, current_files[pr["id"]], journal_sha),
+                               {q: _panel_own(project, fid, doc, q) for q in pr["panels"]})
+            if failure.get("fingerprint") in (None, now):
+                ps.state = "failed"
         if pr is not None and ps.state == "fresh":
             if svg_sha is None:
                 ps.state = "missing"
@@ -277,6 +292,11 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
                 if svg_sha != entry.get("svg"):
                     ps.state = "stale"
                     ps.reasons.append("panel.svg was changed outside idofig")
+            if ps.error is not None:
+                if ps.state == "fresh":
+                    ps.error = None  # the inputs went back to what the published panel was built from
+                else:
+                    ps.reasons.append("changed since the last failed build")
         try:
             man = read_json(pdir / "manifest.json")
             ps.detached_styles = list(man.get("style", {}).get("detached", []))
@@ -422,9 +442,17 @@ def _versions_from(staging: Path) -> tuple[list[str], dict]:
 
 
 def _record_build(project: Project, fid: str, doc: dict, producer: dict, panels: list[str], discovered: list[str],
-                  versions: dict, lock: dict) -> None:
-    journal_sha = _journal_sha(project, doc)
+                  versions: dict, lock: dict, *, before: dict | None = None) -> None:
+    """Record what ``panels`` were built from.
+
+    ``before`` holds the fingerprints taken *before* the producer ran (``files``, ``own``,
+    ``journal``). An input edited while the producer was running must leave the panel stale,
+    so the lock records what the run saw, never what is on disk after it.
+    """
+    journal_sha = before["journal"] if before else _journal_sha(project, doc)
     files = _producer_files(project, producer, discovered)
+    if before:
+        files = {f: before["files"].get(f, h) if f in before["files"] else h for f, h in files.items()}
     lock["producers"][producer["id"]] = {
         "run": producer["run"],
         "files": files,
@@ -435,7 +463,7 @@ def _record_build(project: Project, fid: str, doc: dict, producer: dict, panels:
     shared = _shared(producer, files, journal_sha)
     for pid in panels:
         pdir = project.panel_dir(fid, pid)
-        own = _panel_own(project, fid, doc, pid)
+        own = before["own"][pid] if before else _panel_own(project, fid, doc, pid)
         lock["panels"][pid] = {
             "producer": producer["id"],
             "shared": shared,
@@ -490,8 +518,13 @@ class BuildReport:
 
 def build(project: Project, figure_ids: list[str] | None = None, *, only: list[str] | None = None,
           force: bool = False, on_event: Event | None = None, cancelled: Callable[[], bool] | None = None,
-          timeout: float | None = None, include_expensive: bool = True) -> BuildReport:
-    """Rebuild stale panels (all of ``only`` when given, everything with ``force``) and recompose."""
+          timeout: float | None = None, include_expensive: bool = True, retry_failed: bool = True) -> BuildReport:
+    """Rebuild stale panels (all of ``only`` when given, everything with ``force``) and recompose.
+
+    ``retry_failed=False`` is for automatic builds: a producer that failed on exactly these
+    inputs is not run again until something it depends on changes.
+    """
+    rebuild = {"stale", "missing", "failed"} if retry_failed else {"stale", "missing"}
     report = BuildReport()
     emit = on_event or (lambda e: None)
     with project_lock(project):
@@ -504,14 +537,20 @@ def build(project: Project, figure_ids: list[str] | None = None, *, only: list[s
                 wanted = [pid for pid in producer["panels"]
                           if (only is None or pid in only)
                           and (force or only is not None or by_id.get(pid) is None
-                               or by_id[pid].state in {"stale", "missing", "failed"})]
+                               or by_id[pid].state in rebuild)]
                 if not wanted:
+                    if all(by_id.get(pid) is not None and by_id[pid].state == "fresh" for pid in producer["panels"]):
+                        _record_failure(project, fid, producer["id"], None)
                     continue
                 if not include_expensive and producer.get("cost") == "expensive" and not force and only is None:
                     emit({"event": "producer.skipped", "figure": fid, "producer": producer["id"],
                           "reason": "expensive producers wait for an explicit build"})
                     continue
                 staging = project.state_dir / "staging" / f"{fid}-{producer['id']}-{uuid.uuid4().hex[:8]}"
+                journal_sha = _journal_sha(project, doc)
+                prev = lock["producers"].get(producer["id"], {}).get("discovered", [])
+                before = {"journal": journal_sha, "files": _producer_files(project, producer, prev),
+                          "own": {q: _panel_own(project, fid, doc, q) for q in producer["panels"]}}
                 try:
                     result = run_producer(project, fid, doc, producer, wanted, staging=staging, on_event=emit,
                                           timeout=timeout, cancelled=cancelled)
@@ -523,10 +562,12 @@ def build(project: Project, figure_ids: list[str] | None = None, *, only: list[s
                             os.replace(staging / pid / "panel.svg", dest / "panel.svg")
                             os.replace(staging / pid / "manifest.json", dest / "manifest.json")
                         discovered, versions = _versions_from(staging)
-                        _record_build(project, fid, doc, producer, wanted, discovered, versions, lock)
+                        _record_build(project, fid, doc, producer, wanted, discovered, versions, lock, before=before)
                         _record_failure(project, fid, producer["id"], None)
-                    else:
-                        _record_failure(project, fid, producer["id"], result.error)
+                    elif result.error != "cancelled":
+                        shared = _shared(producer, before["files"], journal_sha)
+                        _record_failure(project, fid, producer["id"], result.error,
+                                        _fingerprint(shared, before["own"]))
                     emit({"event": "producer.done", "figure": fid, "producer": producer["id"], "ok": result.ok,
                           "seconds": round(result.seconds, 3), **({"error": result.error} if result.error else {})})
                 finally:

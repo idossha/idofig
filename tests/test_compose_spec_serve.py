@@ -94,8 +94,7 @@ def _rpc(server, method, **params):
     out = io.StringIO()
     server.out = out
     server.dispatch({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-    if server.build_thread:
-        server.build_thread.join(timeout=120)
+    server.wait_idle(timeout=120)
     lines = [json.loads(line) for line in out.getvalue().splitlines()]
     replies = [m for m in lines if m.get("id") == 1]
     events = [m["params"] for m in lines if m.get("method") == "event"]

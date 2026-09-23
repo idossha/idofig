@@ -11,6 +11,11 @@ A project is the nearest ancestor directory that has any of:
 ``figures``  directory holding ``<figure-id>/figure.json`` (default ``figures``)
 ``journal``  a bundled journal id (``nature``, ``science``, ...) or a path to a JSON file
              with the same shape (default ``suna``)
+
+In a SUNA project without its own setting, the figures directory is ``suna.json``'s
+``directories.figures`` and the journal is ``suna.json``'s ``activeProfileId`` when idofig
+bundles a preset of that id — so switching the journal in SUNA and building from a
+terminal give the same figures.
 """
 
 from __future__ import annotations
@@ -114,17 +119,27 @@ def find_project(start: Path | str | None = None) -> Project:
     )
 
 
+def _suna(root: Path) -> dict:
+    try:
+        data = json.loads((root / "suna.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _make(root: Path, cfg: dict) -> Project:
+    suna = _suna(root) if (root / "suna.json").is_file() else {}
     figures = cfg.get("figures")
-    if not figures and (root / "suna.json").is_file():
-        try:
-            figures = json.loads((root / "suna.json").read_text(encoding="utf-8")).get("directories", {}).get(
-                "figures"
-            )
-        except (OSError, ValueError, AttributeError):
-            figures = None
+    if not figures:
+        dirs = suna.get("directories")
+        figures = dirs.get("figures") if isinstance(dirs, dict) else None
     figures_dir = (root / (figures or "figures")).resolve()
     if root not in figures_dir.parents and figures_dir != root:
         raise ContextError(f"figures directory {figures!r} must be inside the project {root}")
-    journal = os.environ.get("IDOFIG_JOURNAL") or cfg.get("journal") or "suna"
+    journal = os.environ.get("IDOFIG_JOURNAL") or cfg.get("journal")
+    if not journal:
+        from .journals import bundled_ids
+
+        active = suna.get("activeProfileId")
+        journal = active if isinstance(active, str) and active in bundled_ids() else "suna"
     return Project(root=root, figures_dir=figures_dir, journal=str(journal), config=dict(cfg))
