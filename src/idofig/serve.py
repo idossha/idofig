@@ -20,7 +20,8 @@ restore       {path, text, expect_sha}  → restores a file for undo, only if un
 new_figure    {figure, width?, extra?}
 add_panel     {figure, panel, template?, script?, place?}
 parts         {figure, panel}           → the panel's manifest parts
-journals                                → bundled journal presets
+locate        {figure, panel, part}     → candidate code lines that make the part
+journals                               → bundled journal presets
 shutdown
 """
 
@@ -30,7 +31,6 @@ import json
 import sys
 import threading
 import traceback
-from pathlib import Path
 
 from . import journals as J
 from . import props as P
@@ -40,7 +40,7 @@ from ._version import __version__
 from .build import build, figure_status, status
 from .compose import compose
 from .errors import IdofigError, SpecError
-from .fsutil import read_json, rel, sha256_bytes, sha256_file, write_atomic
+from .fsutil import read_json, rel, sha256_file, write_atomic
 from .project import Project
 
 
@@ -245,6 +245,11 @@ class Server:
     def m_parts(self, rid, figure, panel):
         return read_json(self.project.panel_dir(figure, panel) / "manifest.json").get("parts", {})
 
+    def m_locate(self, rid, figure, panel, part):
+        from .locate import locate
+
+        return locate(self.project, figure, panel, part)
+
     def m_journals(self, rid):
         return [J.load(j) for j in J.bundled_ids()]
 
@@ -267,5 +272,3 @@ def main(project: Project) -> int:
     Server(project).serve()
     return 0
 
-
-__all__ = ["Server", "main", "sha256_bytes", "Path"]

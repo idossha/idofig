@@ -222,6 +222,21 @@ def cmd_parts(args) -> int:
     return 0
 
 
+def cmd_locate(args) -> int:
+    from .locate import locate
+
+    hits = locate(find_project(), args.figure, args.panel, args.part)
+    if args.json:
+        _print_json(hits)
+        return 0
+    if not hits:
+        print(f"no line found that makes {args.part} (it may be set in a helper or computed)")
+        return 1
+    for h in hits:
+        print(f"{h['file']}:{h['line']}: {h['text']}")
+    return 0
+
+
 def cmd_journals(args) -> int:
     rows = [J.load(j) for j in J.bundled_ids()]
     if args.json:
@@ -302,6 +317,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("panel")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_parts)
+
+    p = sub.add_parser("locate", help="find the code line that makes a named part")
+    p.add_argument("figure")
+    p.add_argument("panel")
+    p.add_argument("part")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_locate)
 
     p = sub.add_parser("journals", help="list the bundled journal presets")
     p.add_argument("--json", action="store_true")

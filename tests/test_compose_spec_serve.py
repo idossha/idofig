@@ -132,3 +132,13 @@ def test_serve_workspace_style_validation_undo_and_build(project):
                     expect_sha=after_sha)
     assert "changed since this edit" in reply["error"]["message"]
     assert sha256_file(project.figure_json("fig-1")) != after_sha
+
+
+def test_locate_finds_the_line_that_makes_a_part(project):
+    from idofig.locate import locate
+
+    build(project)
+    hits = locate(project, "fig-1", "a", "main.xlabel")
+    assert hits and hits[0]["file"] == "figures/fig-1/make.py" and "set_xlabel" in hits[0]["text"]
+    hits = locate(project, "fig-1", "a", "main.series.trend")
+    assert hits and 'label="trend"' in hits[0]["text"]
