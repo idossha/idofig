@@ -26,6 +26,7 @@ add_panel     {figure, panel, template?, script?, place?}
 check         {figures?, run?}          → CI's verdict: fresh, reproducible, within the journal's rules
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
+journal                                → the project's journal preset (resolved)
 journals                               → bundled journal presets
 props                                   → the style property table, per part kind
 shutdown
@@ -317,6 +318,9 @@ class Server:
         from .locate import locate
 
         return locate(self.project, figure, panel, part)
+
+    def m_journal(self, rid):
+        return J.load(self.project.journal, str(self.project.root))
 
     def m_journals(self, rid):
         return [J.load(j) for j in J.bundled_ids()]
