@@ -250,7 +250,9 @@ class Server:
     def m_update_figure(self, rid, figure, ops):
         path = self.project.figure_json(figure)
         before_text = path.read_text(encoding="utf-8")
-        _, after = S.update_figure(path, ops)
+        root = str(self.project.root)
+        _, after = S.update_figure(path, ops, width_of=lambda d: J.width_mm(
+            J.load(d.get("journal") or self.project.journal, root), d["width"]))
         result = compose(self.project, figure, write=True)
         return {"before": before_text, "after_sha": sha256_file(path), "doc": after, "compose": result.to_json()}
 

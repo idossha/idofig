@@ -9,7 +9,7 @@ import time
 from conftest import read, write
 
 from idofig import spec as S
-from idofig.build import build
+from idofig.build import build, status
 from idofig.compose import compose
 from idofig.fsutil import sha256_file
 from idofig.serve import Server
@@ -159,3 +159,22 @@ def test_a_misspelt_operation_field_is_refused_not_ignored(project):
         else:
             raise AssertionError(f"expected refusal of {op}")
     assert read(project.figure_json("fig-1")) == before
+
+
+def test_a_narrower_figure_keeps_its_layout(project):
+    build(project)
+    srv = Server(project, out=io.StringIO())
+    doc = json.loads(read(project.figure_json("fig-1")))
+    width_before = doc["width"]
+    reply, _ = _rpc(srv, "update_figure", figure="fig-1", ops=[{"op": "width", "preset": "single"}])
+    after = reply["result"]["doc"]
+    places = [p["place"] for p in after["panels"]]
+    single = 89.0  # the default journal's single column
+    assert all(p["x"] + p["w"] <= single + 1e-6 for p in places), places
+    assert not any("extends past" in w for w in reply["result"]["compose"]["warnings"])
+    # a resized panel is stale until it is redrawn at its new size
+    st = status(project)[0].to_json()
+    assert all(p["state"] == "stale" for p in st["panels"])
+    # scale_panels: false leaves the layout to the caller
+    reply, _ = _rpc(srv, "update_figure", figure="fig-1", ops=[{"op": "width", "scale_panels": False, **width_before}])
+    assert [p["place"] for p in reply["result"]["doc"]["panels"]] == places

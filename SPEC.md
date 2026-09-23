@@ -87,6 +87,29 @@ Configuration (`idofig.toml`, or `[tool.idofig]` in `pyproject.toml`):
 An anchor that no longer resolves makes its annotation **detached**: not drawn, reported
 by `compose`, `status` and `check`, and kept in the file.
 
+## Edit operations
+
+Applications and agents edit figure.json with a list of operations (`update_figure` on the
+server, `idofig rpc update_figure`), applied all-or-nothing to a fresh read and validated
+before the atomic write. A field an operation does not take is an error, never ignored.
+
+| op | fields | effect |
+|---|---|---|
+| `place` | `panel`, `x?`, `y?`, `w?`, `h?` | move or resize a panel (mm); a new `w`/`h` makes it stale |
+| `letter` | `panel`, `letter` | set a panel's letter; `null` removes it |
+| `panel.add` | `id`, `letter?`, `place`, `image?` | add a panel |
+| `panel.remove` | `id` | remove a panel, and it from its producer (a producer left with no panels goes) |
+| `producer.set` | `id`, `run?`, `inputs?`, `panels?`, `cost?`, `timeout_s?` | add a producer, or update the fields given |
+| `producer.remove` | `id` | remove a producer |
+| `annotation.add` | `annotation` | add an annotation |
+| `annotation.update` | `id`, `patch` | merge `patch` into an annotation; a `null` value removes that field |
+| `annotation.remove` | `id` | remove an annotation |
+| `width` | `preset` or `mm`, `scale_panels?` | set the width; the layout is scaled to it (panels' `x`/`w`, point anchors' `x`) unless `scale_panels: false` |
+| `height` | `mm` | fix the height; `null` returns to the lowest panel edge |
+| `letters` | `patch` | merge into `letters`; a `null` value removes that field |
+| `journal` | `journal` | per-figure journal; `null` removes it |
+| `app.set` | `key`, `value` | set an application key (`caption`, …); idofig's own keys are refused |
+
 ## style.json — schema 1
 
 ```json

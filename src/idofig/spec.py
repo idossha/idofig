@@ -15,7 +15,7 @@ import copy
 import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .errors import SpecError
 from .fsutil import read_json, write_json
@@ -315,12 +315,15 @@ def _find(items: list, key: str, where: str) -> dict:
     raise SpecError("figure.json", [f"{where} {key!r} does not exist"])
 
 
-def apply_ops(doc: dict, ops: list[dict]) -> dict:
-    """Apply edit operations to a copy of ``doc``. Validation happens after, on the result."""
+def apply_ops(doc: dict, ops: list[dict], width_of: Callable[[dict], float] | None = None) -> dict:
+    """Apply edit operations to a copy of ``doc``. Validation happens after, on the result.
+
+    ``width_of`` resolves a document's width to millimetres (it needs the journal); with it,
+    a ``width`` op scales the layout to the new width (see ``_scale_layout``)."""
     if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
         raise SpecError("figure.json", ["ops must be a list of objects"])
     try:
-        return _apply_ops(doc, ops)
+        return _apply_ops(doc, ops, width_of)
     except KeyError as exc:
         raise SpecError("figure.json", [f"operation is missing the field {exc.args[0]!r}"]) from None
     except (TypeError, ValueError) as exc:
@@ -340,7 +343,7 @@ OP_FIELDS: dict[str, set[str]] = {
     "annotation.add": {"annotation"},
     "annotation.update": {"id", "patch"},
     "annotation.remove": {"id"},
-    "width": {"preset", "mm"},
+    "width": {"preset", "mm", "scale_panels"},
     "height": {"mm"},
     "letters": {"patch"},
     "journal": {"journal"},
@@ -360,7 +363,24 @@ def _check_op_fields(op: dict) -> None:
             f"it takes {', '.join(sorted(allowed))}"])
 
 
-def _apply_ops(doc: dict, ops: list[dict]) -> dict:
+def _scale_layout(doc: dict, r: float) -> None:
+    """Scale the layout horizontally by ``r``: every panel's x and w, and the x of every
+    point anchor (a free point, or a point in a panel). Part and data anchors follow their
+    part by themselves. Panels whose width changes are redrawn by the next build."""
+    for pn in doc.get("panels", []):
+        place = dict(pn.get("place", {}))
+        for k in ("x", "w"):
+            if k in place:
+                place[k] = round(float(place[k]) * r, 3)
+        pn["place"] = place
+    for a in doc.get("annotations", []):
+        for key in ("at", "from", "to"):
+            anchor = a.get(key)
+            if isinstance(anchor, dict) and "x" in anchor and "part" not in anchor and "data" not in anchor:
+                anchor["x"] = round(float(anchor["x"]) * r, 3)
+
+
+def _apply_ops(doc: dict, ops: list[dict], width_of: Callable[[dict], float] | None = None) -> dict:
     for op in ops:
         _check_op_fields(op)
     out = copy.deepcopy(doc)
@@ -416,7 +436,15 @@ def _apply_ops(doc: dict, ops: list[dict]) -> dict:
             _find(out["annotations"], op["id"], "annotation")
             out["annotations"] = [a for a in out["annotations"] if a.get("id") != op["id"]]
         elif kind == "width":
+            # A figure made narrower keeps its layout: panels are scaled to the new width
+            # (and redrawn at it) unless the caller places them itself (scale_panels: false).
+            # Left alone, a double-column layout set to one column hangs 90 mm past its edge.
+            old = width_of(out) if width_of and op.get("scale_panels", True) else None
             out["width"] = {"preset": op["preset"]} if "preset" in op else {"mm": op["mm"]}
+            if old:
+                new = width_of(out)
+                if abs(new - old) > 1e-9:
+                    _scale_layout(out, new / old)
         elif kind == "height":
             if op.get("mm") is None:
                 out.pop("height", None)
@@ -451,11 +479,12 @@ def _apply_ops(doc: dict, ops: list[dict]) -> dict:
     return out
 
 
-def update_figure(path: Path | str, ops: list[dict]) -> tuple[dict, dict]:
+def update_figure(path: Path | str, ops: list[dict],
+                  width_of: Callable[[dict], float] | None = None) -> tuple[dict, dict]:
     """Read fresh, apply ``ops``, validate, write atomically. Returns (before, after)."""
     path = Path(path)
     before = load_figure(path)
-    after = apply_ops(before, ops)
+    after = apply_ops(before, ops, width_of)
     problems = validate_figure(after, expected_id=path.parent.name)
     if problems:
         raise SpecError(path, problems)
