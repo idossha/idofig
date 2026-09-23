@@ -29,7 +29,7 @@ keeps every one of those decisions in a file the build applies:
 * **Panels are drawn at their printed size and never scaled.** A 7 pt label is 7 pt in the
   figure, so journal rules can be checked exactly.
 * **Nothing is lost silently.** An override whose part disappears is *detached* and reported,
-  never applied to something else and never deleted.
+  never applied to something else and never deleted; `idofig style … --move-to NEW` re-attaches it.
 * **Builds are deterministic.** Bundled fonts (Liberation Sans, Arial-metric), matplotlib
   defaults (your matplotlibrc never leaks in), fixed hash salt, no timestamps.
 

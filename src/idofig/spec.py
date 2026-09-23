@@ -504,6 +504,29 @@ def load_style(path: Path | str) -> dict:
     return doc
 
 
+def move_style(path: Path | str, old: str, new: str) -> tuple[dict, dict]:
+    """Re-attach ``old``'s overrides to ``new`` — how a detached override (its part was
+    renamed by a script change) is put back to work. Moved properties win over ones ``new``
+    already had. Read fresh, validate, write atomically."""
+    path = Path(path)
+    before = load_style(path)
+    parts = before.get("parts", {})
+    if old not in parts:
+        raise SpecError(path, [f"there are no overrides for {old!r}"])
+    if old == new:
+        return before, before
+    after = copy.deepcopy(before)
+    moved = after["parts"].pop(old)
+    merged = dict(after["parts"].get(new, {}))
+    merged.update(moved)
+    after["parts"][new] = merged
+    problems = validate_style(after)
+    if problems:
+        raise SpecError(path, problems)
+    write_json(path, after)
+    return before, after
+
+
 def update_style(path: Path | str, part: str, props: dict | None) -> tuple[dict, dict]:
     """Merge ``props`` into one part's overrides (a ``None`` value removes that property;
     ``props=None`` removes the part's overrides). Read fresh, validate, write atomically."""

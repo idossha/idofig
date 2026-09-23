@@ -19,6 +19,7 @@ build         {figures?, only?, force?, include_expensive?, retry_failed?}  → 
 cancel                                  → cancels the running build
 update_figure {figure, ops}             → {before, after, compose}
 update_style  {figure, panel, part, props}  → {before, after}   (props null → reset the part)
+move_style    {figure, panel, from, to}     → {before, after}   (re-attach a detached override)
 restore       {path, text, expect_sha}  → restores a file for undo, only if unchanged since;
                                           answers the text it replaced (for redo)
 new_figure    {figure, width?, extra?}
@@ -274,6 +275,27 @@ class Server:
         path = pdir / "style.json"
         before_text = path.read_text(encoding="utf-8") if path.exists() else None
         S.update_style(path, part, props)
+        return {"before": before_text, "after_sha": sha256_file(path), "path": rel(path, self.project.root)}
+
+    def m_move_style(self, rid, figure, panel, **kw):
+        old, new = kw["from"], kw["to"]
+        pdir = self.project.panel_dir(figure, panel)
+        path = pdir / "style.json"
+        try:
+            parts = read_json(pdir / "manifest.json").get("parts", {})
+        except (FileNotFoundError, ValueError):
+            parts = {}
+        if parts and new not in parts and "*" not in new:
+            raise IdofigError(f"panel {panel!r} has no part {new!r}")
+        before_text = path.read_text(encoding="utf-8") if path.exists() else None
+        _, after = S.move_style(path, old, new)
+        info = parts.get(new)
+        if info is not None:
+            problems = P.validate(info["kind"], after["parts"][new], group=bool(info.get("group")))
+            if problems:
+                if before_text is not None:
+                    write_atomic(path, before_text)
+                raise SpecError(f"{figure}/{panel}/{new}", problems)
         return {"before": before_text, "after_sha": sha256_file(path), "path": rel(path, self.project.root)}
 
     def m_restore(self, rid, path, text, expect_sha):

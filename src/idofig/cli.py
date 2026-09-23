@@ -184,6 +184,10 @@ def cmd_style(args) -> int:
         S.update_style(path, args.part, None)
         print(f"reset {args.part}")
         return 0
+    if args.move_to:
+        S.move_style(path, args.part, args.move_to)
+        print(f"{rel(path, project.root)}: {args.part} → {args.move_to}  (rebuild: idofig build {args.figure})")
+        return 0
     props = {}
     for kv in args.props:
         if "=" not in kv:
@@ -339,6 +343,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("part")
     p.add_argument("props", nargs="*")
     p.add_argument("--reset", action="store_true", help="remove every override of this part")
+    p.add_argument("--move-to", metavar="PART", help="re-attach this part's overrides to another part "
+                   "(a detached override whose part the script renamed)")
     p.set_defaults(fn=cmd_style)
 
     p = sub.add_parser("parts", help="list a panel's named parts")

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
 
 import pytest
 from conftest import read
 
 from idofig import spec as S
-from idofig.build import build
+from idofig.build import build, status
+from idofig.serve import Server
 from idofig.naming import slug, tick_slug
 
 
@@ -123,3 +125,30 @@ def test_author_gid_collision_is_an_error(project):
 ])
 def test_invalid_figure_json_is_rejected(bad):
     assert S.validate_figure(bad, expected_id="fig-1")
+
+
+def test_a_renamed_part_detaches_its_override_and_move_style_reattaches_it(project):
+    build(project)
+    style = project.panel_dir("fig-1", "a") / "style.json"
+    S.update_style(style, "main.series.trend", {"color": "#009e73"})
+    src = read(project.root / "figures/fig-1/make.py")
+    assert 'label="trend"' in src
+    (project.root / "figures/fig-1/make.py").write_text(src.replace('label="trend"', 'label="fit"'))
+    build(project)
+    st = status(project)[0].to_json()
+    a = next(p for p in st["panels"] if p["id"] == "a")
+    assert a["detached_styles"] == ["main.series.trend"]
+    # kept in the file, not applied, not lost
+    assert "main.series.trend" in json.loads(read(style))["parts"]
+
+    srv = Server(project, out=io.StringIO())
+    srv.out = io.StringIO()
+    srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "move_style",
+                  "params": {"figure": "fig-1", "panel": "a", "from": "main.series.trend", "to": "main.series.fit"}})
+    reply = json.loads(srv.out.getvalue().splitlines()[-1])
+    assert reply["result"]["before"] is not None
+    assert json.loads(read(style))["parts"] == {"main.series.fit": {"color": "#009e73"}}
+    build(project)
+    a = next(p for p in status(project)[0].to_json()["panels"] if p["id"] == "a")
+    assert not a.get("detached_styles")
+    assert "stroke: #009e73" in read(project.panel_dir("fig-1", "a") / "panel.svg")

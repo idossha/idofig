@@ -112,6 +112,8 @@ then single parts — the most specific wins. Properties by part kind:
 setters before layout, so they reflow the panel. Restyling a series restyles its legend key.
 An entry that matches nothing is **detached**; an invalid property is **ignored** — both
 are reported in the manifest and by `status`/`check`, and neither is ever removed.
+A detached entry is re-attached by moving it to the part's new name
+(`idofig style FIG PANEL OLD --move-to NEW`, or `move_style` on the server).
 
 ## Part names
 
