@@ -15,22 +15,26 @@ workspace                               → every figure: document, manifests, s
 figure        {figure}                  → one figure, as in workspace (with `rules`: the journal's findings)
 status        {figures?}                → figure statuses
 compose       {figure}                  → compose result (figure.svg written)
-build         {figures?, only?, force?, include_expensive?, retry_failed?}  → build report
-cancel                                  → cancels the running build
-update_figure {figure, ops}             → {before, after, compose}
-update_style  {figure, panel, part, props}  → {before, after}   (props null → reset the part)
-move_style    {figure, panel, from, to}     → {before, after}   (re-attach a detached override)
+build         {figures?, only?, force?, include_expensive?, retry_failed?, timeout?}  → build report
+cancel                                  → {cancelled, dropped}: stops the running build, drops queued ones
+update_figure {figure, ops}             → {before, after_sha, doc, compose}
+update_style  {figure, panel, part, props}  → {before, after_sha, path}   (props null → reset the part)
+move_style    {figure, panel, from, to}     → {before, after_sha, path}   (re-attach a detached override)
 restore       {path, text, expect_sha}  → restores a file for undo, only if unchanged since;
-                                          answers the text it replaced (for redo)
-new_figure    {figure, width?, extra?}
-add_panel     {figure, panel, template?, script?, image?, place?}   (image: a project file, placed as it is)
+                                          {restored, sha, previous, compose}: previous is the
+                                          text it replaced (for redo)
+new_figure    {figure, width?, extra?}  → {path}
+add_panel     {figure, panel, template?, script?, image?, place?, letter?}
+                                        → {figure, panel, script, created} (image: a project
+                                          file, placed as it is)
 check         {figures?, run?}          → CI's verdict: fresh, reproducible, within the journal's rules
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
-journal                                → the project's journal preset (resolved)
-journals                               → bundled journal presets
+journal                                 → the project's journal preset (resolved)
+journals                                → bundled journal presets
 props                                   → the style property table, per part kind
-shutdown
+validate_style {kind, props, group?}    → the problems with setting props on a part of kind ([]: valid)
+shutdown                                → {bye}
 """
 
 from __future__ import annotations

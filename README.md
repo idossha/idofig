@@ -31,7 +31,9 @@ keeps every one of those decisions in a file the build applies:
 * **Nothing is lost silently.** An override whose part disappears is *detached* and reported,
   never applied to something else and never deleted; `idofig style … --move-to NEW` re-attaches it.
 * **Builds are deterministic.** Bundled fonts (Liberation Sans, Arial-metric), matplotlib
-  defaults (your matplotlibrc never leaks in), fixed hash salt, no timestamps.
+  defaults (your matplotlibrc never leaks in), fixed hash salt, no timestamps. A house style
+  a script loads cannot crop a panel or turn its text into paths: panels are saved under
+  fixed settings.
 
 ## Quick start
 
@@ -119,12 +121,47 @@ Wildcards (`*`) address groups; the most specific entry wins.
 Bundled presets (`idofig journals`) carry each journal's stated column widths, font floor
 and ceiling, line weights and panel-label style, with sources. Where a journal states no
 number, idofig states none. Select one in `idofig.toml` / `[tool.idofig]` (`journal =
-"nature"`), per figure (`"journal"` in figure.json), or point at a JSON file.
+"nature"`), per figure (`"journal"` in figure.json), or point at a JSON file. A SUNA project
+that sets none follows the journal chosen in SUNA (`suna.json`'s `activeProfileId`) when
+idofig bundles it.
 
 ## For applications
 
-`idofig serve` speaks JSON-RPC over stdio (see `src/idofig/serve.py`): workspace, status,
-compose (milliseconds), build (streamed events, cancellable), validated edits of
-figure.json and style.json, and a safe restore for undo. SUNA embeds idofig this way.
+`idofig serve` speaks JSON-RPC 2.0 over stdio, one JSON object per line. An application
+keeps one server per project, so composing takes milliseconds rather than a Python
+start-up; SUNA embeds idofig this way. `idofig rpc METHOD '{"param": …}'` calls one method
+once, through the same code, and prints `{result}` or `{error}`. Every method
+(`src/idofig/serve.py`):
+
+| method | params | what it does |
+|---|---|---|
+| `hello` | | version, root, figures dir, journal, python |
+| `workspace` | | every figure: document, manifests, styles, status, journal findings |
+| `figure` | `figure` | one figure, as in `workspace` |
+| `status` | `figures?` | figure statuses |
+| `compose` | `figure` | writes figure.svg; the compose result |
+| `build` | `figures?, only?, force?, include_expensive?, retry_failed?, timeout?` | queues a build; streams `event` notifications and answers with the build report |
+| `cancel` | | stops the running build and drops the queued ones |
+| `update_figure` | `figure, ops` | applies [edit operations](SPEC.md#edit-operations) and recomposes |
+| `update_style` | `figure, panel, part, props` | merges `props` into a part's overrides (a `null` value removes one; `props: null` resets the part) |
+| `move_style` | `figure, panel, from, to` | re-attaches a detached override to a part's new name |
+| `restore` | `path, text, expect_sha` | undo: puts a figure.json or style.json back, only if unchanged since; answers the text it replaced (for redo) |
+| `new_figure` | `figure, width?, extra?` | creates a figure (`extra`: application keys) |
+| `add_panel` | `figure, panel, template?, script?, image?, place?, letter?` | adds a drawn panel (and a producer), or an image panel |
+| `check` | `figures?, run?` | CI's verdict: fresh, reproducible, within the journal's rules |
+| `parts` | `figure, panel` | the panel's manifest parts |
+| `locate` | `figure, panel, part` | candidate code lines that make the part |
+| `journal` | | the project's journal preset, resolved |
+| `journals` | | the bundled journal presets |
+| `props` | | the style property table, per part kind |
+| `validate_style` | `kind, props, group?` | problems with setting `props` on a part of `kind` (empty: valid) |
+| `shutdown` | | stops the server |
+
+The server announces itself with a `ready` event. A build streams `build.start`,
+`producer.start`, `producer.output`, `producer.skipped`, `producer.done`, `figure.composed`
+and `build.done`; builds queue behind each other rather than refuse. Edits answer the text
+they replaced (`before`) and the new file's sha256 (`after_sha`), which is what `restore`
+takes. A failed method answers an error with `data.type`, and `data.problems` when a file
+would be invalid.
 
 See [SPEC.md](SPEC.md) for the complete file formats and the naming grammar.

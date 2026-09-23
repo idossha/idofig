@@ -8,8 +8,8 @@ file formats — SPEC is the contract; change it in the same commit as the code.
 ## Commands
 
 ```sh
-uv venv && uv pip install -e ".[test]"
-.venv/bin/python -m pytest          # must pass before a commit
+uv venv && uv pip install -e ".[test]"   # the test extra brings pytest and ruff
+.venv/bin/python -m pytest               # must pass before a commit
 .venv/bin/ruff check src tests --select F,E9
 ```
 
@@ -31,21 +31,33 @@ uv venv && uv pip install -e ".[test]"
 7. **Composing never imports matplotlib.** `compose`, `build`, `serve` and `cli` stay on the
    standard library so they start in milliseconds.
 8. **Journal numbers come with a source.** Presets are copied from sourced profiles; where a
-   journal states no number, idofig states none (D4 in SUNA).
+   journal states no number, idofig states none (SUNA's D4, "no invented threshold").
 
 ## Where things are
 
+All under `src/idofig/`.
+
 | file | what |
 |---|---|
-| `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save` |
+| `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
+| `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context` |
 | `naming.py` | the part-naming grammar |
 | `styling.py`, `props.py` | style.json application; property registry and validation |
 | `mplsetup.py`, `svgpost.py` | deterministic rc, bundled fonts, SVG post-processing |
 | `compose.py` | figure.json + panels → figure.svg (letters, image panels, annotations) |
+| `images.py` | the natural size of an image panel's file, read from its header (no imaging library) |
 | `build.py` | producers, staging, lock, status, check, compliance |
 | `spec.py` | figure.json / style.json schemas and edit operations |
+| `project.py` | where a project is, where its figures live, and which journal it is written for |
+| `journals.py`, `journals/` | journal figure presets (column widths, font floors, line weights, panel-label style); one JSON per bundled journal, copied from SUNA's sourced profiles |
 | `serve.py`, `cli.py` | JSON-RPC server for apps; the command line |
-| `locate.py`, `scaffold.py` | "where is this part made", templates |
+| `locate.py`, `scaffold.py` | "where is this part made"; `init`, `new` and `add-panel` |
+| `templates/` | the producer scripts `add-panel --template` copies: bar, line, scatter, heatmap, blank |
+| `fonts/` | the bundled Liberation Sans faces and their licence (`OFL.txt`) |
+| `units.py` | physical units: one SVG user unit is one typographic point |
+| `fsutil.py` | small file helpers: atomic writes, canonical JSON, hashing |
+| `errors.py` | every error idofig raises on purpose is an `IdofigError` |
+| `_colornames.py` | the colour names matplotlib accepts, for validating without importing it (generated; do not edit) |
 
 ## Writing producers (for agents working in a project)
 
