@@ -1,4 +1,4 @@
-"""figure.json (schema 2 or 3) and style.json (schema 1): validation, loading, and edits.
+"""figure.json (schema 2 or 3) and style.json (schema 1 or 2): validation, loading, and edits.
 
 Both files are sources of truth that people, agents and the canvas edit. Every write
 re-reads the file from disk, applies the change to that fresh copy, validates the
@@ -19,11 +19,19 @@ from typing import Any, Callable
 from .errors import NotJSONError, SpecError
 from .fsutil import read_json, write_json
 from .project import ID_RE
+from .props import _num as _num_check
 from .props import is_color, is_finite_number
 
 FIGURE_SCHEMA = 2  # a new figure's; see figure_schema
-STYLE_SCHEMA = 1
-OWNED_KEYS = {"schema", "id", "width", "height", "journal", "letters", "producers", "panels", "annotations"}
+STYLE_SCHEMA = 1  # a new style's; see style_schema
+OWNED_KEYS = {"schema", "id", "width", "height", "journal", "letters", "producers", "panels", "annotations",
+              "fit_margin_mm"}
+# style.json's panel-wide keys (0.4): the layout engine's spacing, and the crop to the drawn ink.
+LAYOUT_KEYS = ("hspace_mm", "wspace_mm", "pad_mm")
+PANEL_STYLE_KEYS = ("layout", "trim", "trim_mm")
+_LAYOUT_MM = _num_check(0, 100, "mm")
+_TRIM_MM = _num_check(0, 50, "mm")
+_FIT_MM = _num_check(0, 50, "mm")
 ANNOTATION_TYPES = {"text", "arrow", "line", "bracket", "box"}
 ANCHOR_POSITIONS = {
     "center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right",
@@ -175,6 +183,8 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
         h = doc["height"]
         if not (isinstance(h, dict) and _is_num(h.get("mm")) and h["mm"] > 0):
             p.append('height must be {"mm": <number>} or absent')
+    if "fit_margin_mm" in doc and (why := _FIT_MM(doc["fit_margin_mm"])):
+        p.append(f"fit_margin_mm {why}")
     if "journal" in doc and not isinstance(doc["journal"], str):
         p.append("journal must be a journal id or path")
     if "letters" in doc:
@@ -298,10 +308,12 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
 
 def figure_schema(doc: dict) -> int:
     """The schema a figure.json is written with: 3 when it uses a key an idofig older than 0.3
-    would ignore without a word (a panel's `letter_offset_mm`, `letters.color`), else 2. Under
+    would ignore without a word (a panel's `letter_offset_mm`, `letters.color`; 0.4's
+    `fit_margin_mm`), else 2. Under
     2, two 0.2.2 servers left running redrew five figures' letters at the figure-wide place, in
     black, and called them fresh; 0.2.x refuses a 3. A key like those goes on this list."""
-    uses_3 = "color" in doc.get("letters", {}) or any("letter_offset_mm" in pn for pn in doc.get("panels", []))
+    uses_3 = ("color" in doc.get("letters", {}) or "fit_margin_mm" in doc
+              or any("letter_offset_mm" in pn for pn in doc.get("panels", [])))
     return 3 if uses_3 else 2
 
 
@@ -550,8 +562,9 @@ def validate_style(doc: Any) -> list[str]:
     if not isinstance(doc, dict):
         return ["the file must contain a JSON object"]
     p: list[str] = []
-    if doc.get("schema") != STYLE_SCHEMA:
-        p.append(f"schema must be {STYLE_SCHEMA}")
+    if doc.get("schema") not in (1, 2):
+        p.append("schema must be 1 or 2")
+    p += _panel_style_problems(doc)
     parts = doc.get("parts", {})
     if not isinstance(parts, dict):
         return p + ["parts must be an object mapping part names to properties"]
@@ -570,6 +583,65 @@ def validate_style(doc: Any) -> list[str]:
                 # reply carried a NaN JSON.parse rejects; a 400-digit int came back as null.
                 p.append(f"parts[{name!r}].{k} must be a finite number")
     return p
+
+
+def _panel_style_problems(doc: dict) -> list[str]:
+    p: list[str] = []
+    lay = doc.get("layout")
+    if lay is not None:
+        if not isinstance(lay, dict):
+            p.append("layout must be an object of " + ", ".join(LAYOUT_KEYS))
+        else:
+            for k, v in lay.items():
+                if k not in LAYOUT_KEYS:
+                    p.append(f"layout.{k} is not a layout key (allowed: {', '.join(LAYOUT_KEYS)})")
+                elif why := _LAYOUT_MM(v):  # NaN passes every bound (props.is_finite_number)
+                    p.append(f"layout.{k} {why}")
+    if "trim" in doc and not isinstance(doc["trim"], bool):
+        p.append("trim must be true or false")
+    if "trim_mm" in doc and (why := _TRIM_MM(doc["trim_mm"])):
+        p.append(f"trim_mm {why}")
+    return p
+
+
+def style_schema(doc: dict) -> int:
+    """2 when style.json uses a panel-wide key (`layout`, `trim`, `trim_mm`) an idofig older than
+    0.4 would ignore without a word — it checks no top-level key but `parts`, and would draw the
+    panel unspaced and uncropped, calling it fresh — else 1, which every idofig reads."""
+    return 2 if any(k in doc for k in PANEL_STYLE_KEYS) else 1
+
+
+def update_panel_style(path: Path | str, props: dict) -> tuple[dict, dict]:
+    """Set the panel-wide keys: ``layout`` (merged key by key; a ``None`` value removes one, and
+    ``layout: None`` all), ``trim`` and ``trim_mm`` (``None`` removes). Read fresh, validate,
+    write atomically."""
+    path = Path(path)
+    unknown = sorted(set(props) - set(PANEL_STYLE_KEYS))
+    if unknown:
+        raise SpecError(path, [f"{k} is not a panel style key (allowed: {', '.join(PANEL_STYLE_KEYS)})"
+                               for k in unknown])
+    before = load_style(path)
+    after = copy.deepcopy(before)
+    for k, v in props.items():
+        if k == "layout" and isinstance(v, dict):
+            lay = dict(after.get("layout") or {})
+            for lk, lv in v.items():
+                if lv is None:
+                    lay.pop(lk, None)
+                else:
+                    lay[lk] = lv
+            v = lay or None
+        if v is None:
+            after.pop(k, None)
+        else:
+            after[k] = v
+    after["schema"] = style_schema(after)
+    problems = validate_style(after)
+    if problems:
+        raise SpecError(path, problems)
+    if after != before:
+        write_json(path, after)
+    return before, after
 
 
 def load_style(path: Path | str) -> dict:
@@ -628,6 +700,7 @@ def update_style(path: Path | str, part: str, props: dict | None) -> tuple[dict,
             parts[part] = cur
         else:
             parts.pop(part, None)
+    after["schema"] = style_schema(after)
     problems = validate_style(after)
     if problems:
         raise SpecError(path, problems)

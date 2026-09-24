@@ -509,3 +509,45 @@ def tick_params_from_style(fig, table: PartTable, style: dict) -> None:
                               {"labelleft": False, "labelright": False})
                 if kw:
                     ax.tick_params(axis=letter, which="major", **kw)
+
+
+def apply_layout(fig, layout: dict, undo: Undo) -> list[str]:
+    """style.json's ``layout`` (mm) on the constrained layout engine, before the save lays the
+    panel out, so matplotlib re-flows the axes; ``undo`` puts the engine and gridspecs back.
+
+    A mm means a mm on paper. ``pad_mm`` is the engine's ``w_pad``/``h_pad`` (inches): the
+    clear space around every axes' ink, the panel's edges included. ``wspace_mm``/``hspace_mm``
+    is the clear gap between neighbouring axes' ink (tick labels and axis labels included). The
+    engine gives each side of an axes ``wspace / 2 / ncols`` of the figure as that margin
+    (``_constrained_layout.get_margin_from_padding``), so the gap is ``wspace * W / ncols``:
+    it is set on each gridspec as ``wspace_mm * ncols / W_mm`` — one engine-wide fraction
+    would be wrong for every grid of another shape. Where a gap is less than twice the pad,
+    matplotlib uses the pads (its rule, kept)."""
+    from matplotlib.layout_engine import ConstrainedLayoutEngine
+
+    if not layout:
+        return []
+    engine = fig.get_layout_engine()
+    if not isinstance(engine, ConstrainedLayoutEngine):
+        # Axes placed by hand (`layout=None`, axes_mm) or a tight layout: nothing re-flows, and
+        # faking it by moving axes would rewrite what the script placed.
+        return ["style.json layout had no effect: this panel has no constrained layout engine "
+                "(its axes are placed by the script); set layout=\"constrained\" in idofig.panels() "
+                "or space the axes in the script"]
+    params = dict(engine._params)
+    undo.callback(engine._params.update, params)
+    if "pad_mm" in layout:
+        pad_in = layout["pad_mm"] / MM_PER_IN
+        engine.set(w_pad=pad_in, h_pad=pad_in)
+    w_mm, h_mm = fig.get_figwidth() * MM_PER_IN, fig.get_figheight() * MM_PER_IN
+    grids = {id(g): g for ax in fig.axes if (ss := ax.get_subplotspec()) is not None
+             for g in [ss.get_gridspec()]}
+    for gs in grids.values():
+        nrows, ncols = gs.get_geometry()
+        # ponytail: fractions of the whole panel; a gridspec inside a subfigure is spaced as if it spanned it.
+        for key, attr, n, span in (("wspace_mm", "wspace", ncols, w_mm), ("hspace_mm", "hspace", nrows, h_mm)):
+            if key not in layout:
+                continue
+            name = attr if hasattr(gs, attr) else f"_{attr}"  # GridSpecFromSubplotSpec keeps `_wspace`
+            undo.set(gs, name, layout[key] * n / span)
+    return []

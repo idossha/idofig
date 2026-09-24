@@ -70,7 +70,8 @@ in the lock (those a declared producer draws) and recomposes `figure.svg`.
 | `schema` | idofig | yes | `2`, or `3` when the figure uses a key idofig 0.3 added (below) |
 | `id` | idofig | yes | equals the directory name |
 | `width` | idofig | yes | `{"preset": "single"\|"onehalf"\|"double"}` or `{"mm": n}` |
-| `height` | idofig | no | `{"mm": n}`; absent → the lowest panel edge |
+| `height` | idofig | no | `{"mm": n}`; absent → the figure **fits** what it draws (below) |
+| `fit_margin_mm` | idofig | no | 0–50 mm of white kept around what a fitted figure draws (default 0); schema 3 |
 | `journal` | idofig | no | overrides the project's journal for this figure |
 | `letters` | idofig | no | `{show, case: lower\|upper, weight: normal\|bold, size_pt, offset_mm: [dx, dy], wrapper: none\|parens\|period, color}`; `offset_mm` in mm, each within ±100; `color` is a colour as an annotation's is (default `#000000`); any other key is an error |
 | `producers` | idofig | no | see below |
@@ -78,8 +79,18 @@ in the lock (those a declared producer draws) and recomposes `figure.svg`.
 | `annotations` | idofig | no | see below |
 | anything else | the application | no | preserved untouched (`caption`, `namespace`, `label`, …) |
 
-**Schema 3** is schema 2 plus the two keys an idofig older than 0.3 would ignore without a
-word: a panel's `letter_offset_mm` and `letters.color` (0.2.x checks no panel or letters key
+**Fit.** With no `height`, compose makes the figure as tall as what it draws: every panel
+(a trimmed one at its crop's size, see style.json), every letter (its cap height, where
+`letters.offset_mm` and the panel's `letter_offset_mm` put it), plus `fit_margin_mm` above and
+below. An empty band above everything is cut by starting the view lower: figure.svg's
+`viewBox` is `0 <top> W H` with `<top>` in points, and figure.json's coordinates are untouched
+— a panel at `y: 12` is still at 12 mm, it is only the view that starts at 12 mm. Neither the
+height nor the top is stored anywhere (compose's result reports `height_mm` and `top_mm`); the
+width stays the journal's column. Annotations are not measured (ponytail: an annotation above
+every panel is cut by a fit; state a height, or place it inside).
+
+**Schema 3** is schema 2 plus the keys an idofig older than 0.3 would ignore without a
+word: a panel's `letter_offset_mm` and `letters.color`, and 0.4's `fit_margin_mm` (0.2.x checks no panel or letters key
 it does not know, and composed those letters at the figure-wide place, in black, calling
 figure.svg fresh). An edit writes `3` when the figure uses either and `2` when it uses
 neither, so 0.2.x refuses the one file it would draw wrong ("schema must be 2") and reads
@@ -166,11 +177,39 @@ before the atomic write. A field an operation does not take is an error, never i
 | `journal` | `journal` | per-figure journal; `null` removes it |
 | `app.set` | `key`, `value` | set an application key (`caption`, …); idofig's own keys are refused |
 
-## style.json — schema 1
+## style.json — schema 1 and 2
 
 ```json
 { "schema": 1, "parts": { "<part name or pattern>": { "<property>": <value>, … } } }
+{ "schema": 2, "layout": {"hspace_mm": 4, "wspace_mm": 6, "pad_mm": 1}, "trim_mm": 1, "parts": { … } }
 ```
+
+**Panel-wide keys (0.4).** Schema 2 is schema 1 plus the keys an idofig older than 0.4 would
+ignore without a word (it checks no top-level key but `parts`): an edit writes `2` when the
+file uses one and `1` when it uses none, so 0.3 refuses the one file it would draw wrong.
+
+* `layout` — the constrained layout engine's spacing, in mm on paper, applied before the save
+  lays the panel out, so matplotlib re-flows the axes. `pad_mm` is the clear space around
+  every axes' ink, the panel's edges included (the engine's `w_pad`/`h_pad`, in inches).
+  `wspace_mm`/`hspace_mm` is the clear gap between neighbouring axes' ink, tick and axis
+  labels included: the engine gives each side of an axes `wspace / 2 / ncols` of the figure,
+  so idofig sets each gridspec's own `wspace` to `wspace_mm × ncols / W_mm` (one engine-wide
+  fraction would be wrong for a grid of another shape). Where a gap is less than twice the pad,
+  matplotlib uses the pads (its rule, kept: set `pad_mm` lower for a narrower gap). Each value
+  is a finite number from 0 to 100; any other key is an error. A panel with no constrained
+  layout (`idofig.panels(..., layout=None)`, axes placed with `axes_mm`) takes no spacing: the
+  manifest's `warnings` say `style.json layout had no effect: …` and nothing moves — idofig never
+  rewrites where a script placed an axes.
+* `trim: true`, or `trim_mm: <margin>` (0–50 mm; alone it turns trim on, and `trim: false`
+  keeps it off) — crop the panel to its ink plus the margin. The ink is every drawn part's box
+  after styles and `dx_mm`/`dy_mm` (a panel's or an axes' background is not ink) and every
+  axes' frame, within the panel. Nothing is rescaled: panel.svg keeps its drawn size, the
+  manifest records the crop (`trim`), and compose places the crop's top-left corner at the
+  panel's place, clipped to the crop, so the panel shrinks towards its top-left and no
+  neighbour moves. The cropped size is derived at every build and stored nowhere else.
+
+A script is never rewritten to space or crop a panel: both are refinements, and refinements
+live in style.json (the producer owns what is drawn).
 
 Patterns may use `*` (`main.xtick.*`, `*.xlabel`). Resolution order: patterns, then groups,
 then single parts — the most specific wins. Properties by part kind:
@@ -276,10 +315,14 @@ one, like any part that is not drawn, has no id in the SVG.
 
 ## manifest.json — schema 1
 
-`{schema, figure, panel, render, size{w_pt,h_pt,w_mm,h_mm}, parts{name: {kind, role,
+`{schema, figure, panel, render, size{w_pt,h_pt,w_mm,h_mm}, trim?{x_pt,y_pt,w_pt,h_pt}, parts{name: {kind, role,
 stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, base?}}, axes{name: {bbox, xscale, yscale,
 xlim, ylim}}, style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
-the idofig that drew the panel (absent: 0.2.x). `bbox` is `[x0, y0, x1, y1]` in the panel's
+the idofig that drew the panel (absent: 0.2.x). `trim` (a trimmed panel only) is the crop in
+the drawn panel's points; every `bbox` of such a panel, a part's or an axes', is then
+measured from the crop's corner — the frame compose places at the panel's place — so a
+consumer that adds a box to the place needs no other change, and the ink check holds boxes
+to the crop's size. `bbox` is `[x0, y0, x1, y1]` in the panel's
 points with y downwards, whatever the figure's dpi, and a text's (a legend's too) is measured
 with the text metrics the SVG is laid out with, the SVG renderer's (Agg's round it to whole
 points and, under matplotlib < 3.11, pad a math text a point a side: a `log$_{10}$` xlabel

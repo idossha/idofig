@@ -29,6 +29,10 @@ graphics, so it is what makes a figure reproducible.
    Never set `figsize`, never call `tight_layout()` or `savefig()`, never scale fonts to fit:
    the panel is the size it prints at. For manual layouts use `idf.panels(..., layout=None)`
    and `idf.axes_mm(fig, left, bottom, width, height)` (mm from the panel's bottom-left).
+   Leave the gaps between axes to the layout: `style.json` `layout` (`hspace_mm`,
+   `wspace_mm`, `pad_mm`) spaces them in mm on paper, and `trim`/`trim_mm` crops a panel to its
+   ink — an editor or an agent sets those, and never edits the script to do it. Spacing needs
+   the constrained layout; a `layout=None` panel reports that it had no effect.
    `idf.panel("dose")` returns one Figure. A script that sits outside `figures/<fig>/` and
    is run directly finds its figure through the producer whose `run` names it, or through
    `idf.panels(..., figure="fig-2")`.

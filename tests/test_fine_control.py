@@ -1201,8 +1201,10 @@ def test_a_letter_past_the_figures_edge_is_reported_with_the_overhang(project):
     """A letter moved off the figure is missing from print, and a canvas cannot show it to be
     dragged back: [-500, 0] was drawn at x=-1417 pt and nothing said so."""
     assert not any("letter" in w for w in compose(project, "fig-1", write=False).warnings)
+    # At a stated height: a figure that fits (no height) grows to take the letters in (0.4.0).
     S.update_figure(project.figure_json("fig-1"), [{"op": "letter", "panel": "a", "offset_mm": [-5, 0]},
-                                                   {"op": "letters", "patch": {"offset_mm": [0, -1.5]}}])
+                                                   {"op": "letters", "patch": {"offset_mm": [0, -1.5]}},
+                                                   {"op": "height", "mm": 60}])
     warnings = [w for w in compose(project, "fig-1", write=False).warnings if "letter" in w]
     assert sorted(warnings) == ["the letter of panel 'a' extends 1.5 mm past the figure's top edge",
                                 "the letter of panel 'a' extends 5 mm past the figure's left edge",

@@ -711,7 +711,9 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
             man = read_json(project.panel_dir(fid, pn["id"]) / "manifest.json")
         except (FileNotFoundError, ValueError):
             continue
-        w_pt, h_pt = (man.get("size") or {}).get("w_pt"), (man.get("size") or {}).get("h_pt")
+        # A trimmed panel's boxes are measured from its crop's corner (SPEC.md, manifest.json).
+        frame = man.get("trim") or man.get("size") or {}
+        w_pt, h_pt = frame.get("w_pt"), frame.get("h_pt")
         # Boxes another render measured are not checked for ink: 0.2.x boxed parts it never drew
         # and a set_dpi(300) panel at 300/72 its size (18 false findings on one project).
         current = drawn_under(man) == RENDER

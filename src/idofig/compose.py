@@ -54,6 +54,7 @@ class ComposeResult:
     path: Path
     width_mm: float
     height_mm: float
+    top_mm: float = 0.0
     changed: bool = False
     warnings: list[str] = field(default_factory=list)
     detached: list[dict] = field(default_factory=list)
@@ -62,7 +63,7 @@ class ComposeResult:
 
     def to_json(self) -> dict:
         return {"path": str(self.path), "width_mm": self.width_mm, "height_mm": self.height_mm,
-                "changed": self.changed, "warnings": self.warnings, "detached": self.detached,
+                "top_mm": self.top_mm, "changed": self.changed, "warnings": self.warnings, "detached": self.detached,
                 "missing": self.missing, "ms": round(self.ms, 2)}
 
 
@@ -346,19 +347,16 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
     body: list[str] = []
 
     panels = doc.get("panels", [])
-    if doc.get("height"):
-        height_mm = float(doc["height"]["mm"])
-    else:
-        height_mm = max([p["place"]["y"] + p["place"]["h"] for p in panels] or [50.0])
-    W, H = width_mm * PT_PER_MM, height_mm * PT_PER_MM
+    # What each panel and letter covers (mm, figure.json's frame): checked against the figure's
+    # edges, and what the height fits when figure.json states none.
+    boxes: list[tuple[str, float, float, float, float]] = []
 
     for pn in panels:
         pid = pn["id"]
         place = pn["place"]
         x, y = place["x"] * PT_PER_MM, place["y"] * PT_PER_MM
-        warnings += _outside_figure(f"panel {pid!r}", place["x"], place["y"], place["w"], place["h"],
-                                    width_mm, height_mm)
         if "image" in pn:
+            boxes.append((f"panel {pid!r}", place["x"], place["y"], place["w"], place["h"]))
             src = (project.root / pn["image"]).resolve()
             if not src.is_file() or project.root not in src.parents:
                 missing.append(pid)
@@ -373,6 +371,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
             raw = None
         man = _read(pdir / "manifest.json")
         if raw is None:
+            boxes.append((f"panel {pid!r}", place["x"], place["y"], place["w"], place["h"]))
             missing.append(pid)
             continue
         if man is not None:
@@ -390,6 +389,21 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
                     f"panel {pid!r} was drawn at {fmt(size[0] / PT_PER_MM, 1)}×{fmt(size[1] / PT_PER_MM, 1)} mm "
                     f"but is placed as {fmt(place['w'], 1)}×{fmt(place['h'], 1)} mm; rebuild it"
                 )
+        trim = (manifests.get(pid) or {}).get("trim")
+        if trim:
+            # Cropped to its ink (style.json trim): the crop's corner sits at the place's corner,
+            # so the panel shrinks towards its top-left and no neighbour moves. The panel's own
+            # background would otherwise still cover what was cropped off.
+            tx, ty, tw, th = trim["x_pt"], trim["y_pt"], trim["w_pt"], trim["h_pt"]
+            boxes.append((f"panel {pid!r}", place["x"], place["y"], tw / PT_PER_MM, th / PT_PER_MM))
+            body.append(
+                f'<g id="{pid}" data-idofig-panel="{pid}" data-idofig-trim="{fmt(tw)} {fmt(th)}" '
+                f'transform="translate({fmt(x - tx)} {fmt(y - ty)})" clip-path="url(#{pid}.trim)">'
+                f'<clipPath id="{pid}.trim"><rect x="{fmt(tx)}" y="{fmt(ty)}" width="{fmt(tw)}" '
+                f'height="{fmt(th)}"/></clipPath>{inner}</g>'
+            )
+            continue
+        boxes.append((f"panel {pid!r}", place["x"], place["y"], place["w"], place["h"]))
         body.append(
             f'<g id="{pid}" data-idofig-panel="{pid}" transform="translate({fmt(x)} {fmt(y)})">'
             f"{inner}</g>"
@@ -409,14 +423,31 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
             px, py = (v * PT_PER_MM for v in pn.get("letter_offset_mm", (0, 0)))
             lx = pn["place"]["x"] * PT_PER_MM + ox + px
             ly = pn["place"]["y"] * PT_PER_MM + oy + py + size * 0.74
-            # Its top-left corner: a letter moved off the figure is missing from print, and a
-            # canvas cannot show it to drag it back.
-            warnings += _outside_figure(f"the letter of panel {pn['id']!r}", lx / PT_PER_MM,
-                                        (ly - size * 0.74) / PT_PER_MM, 0, 0, width_mm, height_mm)
+            # Its top-left corner is checked: a letter moved off the figure is missing from
+            # print, and a canvas cannot show it to drag it back. Its cap height is what a fit keeps.
+            boxes.append((f"the letter of panel {pn['id']!r}", lx / PT_PER_MM, (ly - size * 0.74) / PT_PER_MM,
+                          0, size * 0.74 / PT_PER_MM))
             body.append(
                 f'<text id="{pn["id"]}.letter" data-idofig-role="letter" x="{fmt(lx)}" y="{fmt(ly)}" '
                 f'style="{font}">{escape(text)}</text>'
             )
+
+    top_mm = 0.0
+    if doc.get("height"):
+        height_mm = float(doc["height"]["mm"])
+    elif boxes:
+        # Fit (no height stated): the figure is as tall as what it draws, and an empty band above
+        # everything is cut by starting the view lower — figure.json's coordinates stay as they
+        # are; the viewBox's origin says where the view starts. Derived here, never stored (D1).
+        margin = float(doc.get("fit_margin_mm", 0.0))
+        top_mm = round(min(b[2] for b in boxes) - margin, 3)
+        height_mm = round(max(b[2] + b[4] for b in boxes) + margin - top_mm, 3)
+    else:
+        height_mm = 50.0
+    for what, bx, by, bw, bh in boxes:
+        warnings += _outside_figure(what, bx, by - top_mm, bw if not what.startswith("the letter") else 0,
+                                    bh if not what.startswith("the letter") else 0, width_mm, height_mm)
+    W, H, T = width_mm * PT_PER_MM, height_mm * PT_PER_MM, top_mm * PT_PER_MM
 
     anchors = _Anchors(doc, manifests)
     ann_out = []
@@ -433,9 +464,9 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
     svg = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
-        f'width="{fmt(width_mm)}mm" height="{fmt(height_mm)}mm" viewBox="0 0 {fmt(W)} {fmt(H)}" '
+        f'width="{fmt(width_mm)}mm" height="{fmt(height_mm)}mm" viewBox="0 {fmt(T)} {fmt(W)} {fmt(H)}" '
         f'data-idofig-figure="{escape(figure_id)}">\n'
-        f'<rect id="figure.background" data-idofig-role="background" x="0" y="0" width="{fmt(W)}" height="{fmt(H)}" '
+        f'<rect id="figure.background" data-idofig-role="background" x="0" y="{fmt(T)}" width="{fmt(W)}" height="{fmt(H)}" '
         'style="fill: #ffffff"/>\n'
         + "\n".join(body)
         + "\n</svg>\n"
@@ -446,7 +477,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
         if old != svg:
             write_atomic(out_path, svg)
             changed = True
-    return ComposeResult(svg=svg, path=out_path, width_mm=width_mm, height_mm=height_mm, changed=changed,
+    return ComposeResult(svg=svg, path=out_path, width_mm=width_mm, height_mm=height_mm, top_mm=top_mm, changed=changed,
                          warnings=warnings, detached=detached, missing=missing,
                          ms=(time.perf_counter() - t0) * 1000)
 

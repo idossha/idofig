@@ -137,6 +137,9 @@ Every refinement is a small named delta that survives the script being re-run:
 | a text or legend part's position | `style.json` `dx_mm`, `dy_mm` | mm, y down |
 | an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
+| the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |
+| a panel's empty margin | `style.json` `trim: true` or `trim_mm` | mm |
+| the figure's height | leave `height` out: it fits what is drawn (`fit_margin_mm`) | mm |
 
 `dx_mm`/`dy_mm` move a part after the layout is frozen, so it lands exactly that far from
 where the script drew it and nothing else moves; the freeze lasts that one save, so a
@@ -188,6 +191,7 @@ once, through the same code, and prints `{result}` or `{error}`. Every method
 | `cancel` | | stops the running build and drops the queued ones |
 | `update_figure` | `figure, ops` | applies [edit operations](SPEC.md#edit-operations) and recomposes |
 | `update_style` | `figure, panel, part, props` | merges `props` into a part's overrides (a `null` value removes one; `props: null` resets the part) |
+| `update_panel_style` | `figure, panel, props` | sets style.json's panel-wide keys — `layout` {hspace_mm, wspace_mm, pad_mm} (merged; `null` removes), `trim`, `trim_mm`; answers like `update_style` |
 | `move_style` | `figure, panel, from, to` | re-attaches a detached override to a part's new name |
 | `restore` | `path, text, expect_sha` | undo: puts a figure.json or style.json back, only if unchanged since; answers the text it replaced (for redo) |
 | `new_figure` | `figure, width?, extra?` | creates a figure (`extra`: application keys) |

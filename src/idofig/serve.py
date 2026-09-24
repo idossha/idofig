@@ -302,6 +302,13 @@ class Server:
         S.update_style(path, part, props)
         return {"before": before_text, "after_sha": sha256_file(path), "path": rel(path, self.project.root)}
 
+    def m_update_panel_style(self, rid, figure, panel, props):
+        """style.json's panel-wide keys (``layout``, ``trim``, ``trim_mm``); undone with ``restore``."""
+        path = self.project.panel_dir(figure, panel) / "style.json"
+        before_text = path.read_text(encoding="utf-8") if path.exists() else None
+        S.update_panel_style(path, props)
+        return {"before": before_text, "after_sha": sha256_file(path), "path": rel(path, self.project.root)}
+
     def m_move_style(self, rid, figure, panel, **kw):
         old, new = kw["from"], kw["to"]
         pdir = self.project.panel_dir(figure, panel)

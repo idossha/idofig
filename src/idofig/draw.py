@@ -30,7 +30,7 @@ from . import spec as S
 from .errors import ContextError, IdofigError
 from .fsutil import dump_json, rel, write_atomic
 from .project import Project, find_project
-from .units import PT_PER_IN, mm_to_in, pt_to_mm
+from .units import PT_PER_IN, PT_PER_MM, mm_to_in, pt_to_mm
 
 
 @dataclass
@@ -517,6 +517,7 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
     with styling.Undo() as undo:  # what the save changes to write the panel, put back once it is written
         undo.callback(styling.forget_offsets, table)
         _on_agg(fig, undo)
+        layout_warnings = styling.apply_layout(fig, style.get("layout"), undo)
         styling.tick_params_from_style(fig, table, style)
         styling.apply(table, style, sreport, final=False)
         fig.canvas.draw()
@@ -539,7 +540,12 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         undo.set(fig, "dpi", 72)
         parts, axes, roles = _measure(fig, table, sreport, height_pt)
 
-    warnings = list(table.warnings) + _check_fonts(table)
+    warnings = list(table.warnings) + layout_warnings + _check_fonts(table)
+    trim = None
+    if style.get("trim", "trim_mm" in style):  # trim_mm alone turns it on; trim: false keeps it off
+        trim = _trim(parts, axes, width_pt, height_pt, style.get("trim_mm", 0.0) * PT_PER_MM)
+        if trim is None:
+            warnings.append("style.json trim had no effect: the panel draws nothing to crop to")
     manifest = {
         "schema": 1,
         "figure": ctx.figure_id,
@@ -549,6 +555,7 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         "render": RENDER,
         "size": {"w_pt": round(width_pt, 3), "h_pt": round(height_pt, 3),
                  "w_mm": round(pt_to_mm(width_pt), 3), "h_mm": round(pt_to_mm(height_pt), 3)},
+        **({"trim": trim} if trim else {}),
         "parts": parts,
         "axes": axes,
         "style": {"applied": sreport.applied, "detached": sreport.detached, "invalid": sreport.invalid},
@@ -567,6 +574,31 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         # A value get_props did not clean (a NaN, an array) is named with its panel, not left a
         # bare encoder traceback.
         raise IdofigError(f"{ctx.figure_id}/{pid}: the manifest holds a value JSON cannot carry ({exc})") from None
+
+
+def _trim(parts: dict, axes: dict, width_pt: float, height_pt: float, margin_pt: float) -> dict | None:
+    """The box the drawn ink fills plus ``margin_pt``, within the panel, as ``{x_pt, y_pt, w_pt,
+    h_pt}`` in the panel's points; every box in ``parts`` and ``axes`` is moved to be measured
+    from its corner, which compose places at the panel's place. Measured after the offsets, so
+    a nudged label is inside. A background (the panel's, an axes') is not ink. Nothing is
+    rescaled (rule 3): the panel.svg keeps its drawn size, compose crops it."""
+    boxes = [pt["bbox"] for pt in parts.values()
+             if pt.get("bbox") and not pt.get("group") and pt.get("role") != "background"]
+    boxes += [a["bbox"] for a in axes.values() if a.get("bbox") and a["bbox"][2] > a["bbox"][0]]
+    ink = _union(boxes)
+    if ink is None:
+        return None
+    x0, y0 = max(0.0, ink[0] - margin_pt), max(0.0, ink[1] - margin_pt)
+    x1, y1 = min(width_pt, ink[2] + margin_pt), min(height_pt, ink[3] + margin_pt)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    r = lambda v: round(float(v), 3)  # noqa: E731
+    x0, y0 = r(x0), r(y0)
+    for entry in [*parts.values(), *axes.values()]:
+        b = entry.get("bbox")
+        if b:
+            entry["bbox"] = [r(b[0] - x0), r(b[1] - y0), r(b[2] - x0), r(b[3] - y0)]
+    return {"x_pt": x0, "y_pt": y0, "w_pt": r(x1 - x0), "h_pt": r(y1 - y0)}
 
 
 def _measure(fig, table, sreport, height_pt: float) -> tuple[dict, dict, dict]:
