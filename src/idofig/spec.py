@@ -1,4 +1,4 @@
-"""figure.json (schema 2) and style.json (schema 1): validation, loading, and edits.
+"""figure.json (schema 2 or 3) and style.json (schema 1): validation, loading, and edits.
 
 Both files are sources of truth that people, agents and the canvas edit. Every write
 re-reads the file from disk, applies the change to that fresh copy, validates the
@@ -12,16 +12,16 @@ to the application that embeds idofig and is preserved untouched.
 from __future__ import annotations
 
 import copy
-import math
 import re
 from pathlib import Path
 from typing import Any, Callable
 
-from .errors import SpecError
+from .errors import NotJSONError, SpecError
 from .fsutil import read_json, write_json
 from .project import ID_RE
+from .props import is_color, is_finite_number
 
-FIGURE_SCHEMA = 2
+FIGURE_SCHEMA = 2  # a new figure's; see figure_schema
 STYLE_SCHEMA = 1
 OWNED_KEYS = {"schema", "id", "width", "height", "journal", "letters", "producers", "panels", "annotations"}
 ANNOTATION_TYPES = {"text", "arrow", "line", "bracket", "box"}
@@ -29,17 +29,36 @@ ANCHOR_POSITIONS = {
     "center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right",
 }
 PART_NAME_RE = re.compile(r"^[^\s\"'<>&]+$")
+LETTER_KEYS = {"show", "case", "weight", "size_pt", "offset_mm", "wrapper", "color"}
 
 
 # ----------------------------------------------------------------------------- helpers
 
 
-def _is_num(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+_is_num = is_finite_number  # an int too large for a float is none: 10**400 raised OverflowError here
+
+
+def _is_pair(v: Any) -> bool:
+    return isinstance(v, list) and len(v) == 2 and all(_is_num(x) for x in v)
 
 
 def _id_ok(v: Any) -> bool:
     return isinstance(v, str) and bool(ID_RE.match(v)) and ".." not in v
+
+
+def _one_of(v: Any, options: Any) -> bool:
+    """``v`` is one of the strings ``options``. With ``in`` alone, ``"weight": ["bold"]`` raised
+    "unhashable type", and one such figure.json broke ``workspace`` for the whole project."""
+    return isinstance(v, str) and v in options
+
+
+# How far a letter moves from where the figure-wide rule puts it (mm, each way), as a part does:
+# unbounded, [-500, 0] drew a letter off the figure unreported, and 1e308 wrote x="inf".
+LETTER_OFFSET_MM = 100
+
+
+def _is_letter_offset(v: Any) -> bool:
+    return _is_pair(v) and all(abs(x) <= LETTER_OFFSET_MM for x in v)
 
 
 # ----------------------------------------------------------------------------- figure.json
@@ -50,16 +69,15 @@ def validate_anchor(a: Any, where: str, panel_ids: set[str]) -> list[str]:
     if not isinstance(a, dict):
         return [f"{where} must be an object"]
     if "offset" in a:
-        off = a["offset"]
-        if not (isinstance(off, list) and len(off) == 2 and all(_is_num(x) for x in off)):
+        if not _is_pair(a["offset"]):
             p.append(f"{where}.offset must be [dx_mm, dy_mm]")
     if "panel" in a:
-        if a["panel"] not in panel_ids:
+        if not _one_of(a["panel"], panel_ids):
             p.append(f"{where}.panel {a['panel']!r} is not a panel of this figure")
         if "part" in a:
             if not isinstance(a["part"], str) or not a["part"]:
                 p.append(f"{where}.part must be a part name")
-            if a.get("at", "center") not in ANCHOR_POSITIONS:
+            if not _one_of(a.get("at", "center"), ANCHOR_POSITIONS):
                 p.append(f"{where}.at must be one of {sorted(ANCHOR_POSITIONS)}")
         elif "data" in a:
             if not isinstance(a.get("axes"), str):
@@ -85,26 +103,25 @@ def validate_annotation(a: Any, i: int, panel_ids: set[str]) -> list[str]:
     if not _id_ok(a.get("id")):
         p.append(f"{where}.id must be an id (lowercase letters, digits, - _ .)")
     t = a.get("type")
-    if t not in ANNOTATION_TYPES:
+    if not _one_of(t, ANNOTATION_TYPES):
         p.append(f"{where}.type must be one of {sorted(ANNOTATION_TYPES)}")
         return p
     if t == "text":
         p += validate_anchor(a.get("at"), f"{where}.at", panel_ids)
         if not isinstance(a.get("text"), str):
             p.append(f"{where}.text must be text")
-        if a.get("align", "start") not in {"start", "middle", "end"}:
+        if not _one_of(a.get("align", "start"), {"start", "middle", "end"}):
             p.append(f"{where}.align must be start, middle or end")
     else:
         p += validate_anchor(a.get("from"), f"{where}.from", panel_ids)
         p += validate_anchor(a.get("to"), f"{where}.to", panel_ids)
-    if t in {"arrow", "line"} and a.get("head", "end" if t == "arrow" else "none") not in {
-        "end", "start", "both", "none"
-    }:
+    if t in {"arrow", "line"} and not _one_of(a.get("head", "end" if t == "arrow" else "none"),
+                                              {"end", "start", "both", "none"}):
         p.append(f"{where}.head must be end, start, both or none")
     if t == "bracket":
         if "label" in a and not isinstance(a["label"], str):
             p.append(f"{where}.label must be text")
-        if a.get("side", "above") not in {"above", "below"}:
+        if not _one_of(a.get("side", "above"), {"above", "below"}):
             p.append(f"{where}.side must be above or below")
     style = a.get("style", {})
     if not isinstance(style, dict):
@@ -120,7 +137,7 @@ def validate_annotation(a: Any, i: int, panel_ids: set[str]) -> list[str]:
                 if not _is_num(v):
                     p.append(f"{where}.style.{k} must be a number")
             elif k == "weight":
-                if v not in {"normal", "bold"}:
+                if not _one_of(v, {"normal", "bold"}):
                     p.append(f"{where}.style.weight must be normal or bold")
             elif k == "dash":
                 if not (isinstance(v, list) and all(_is_num(x) and x >= 0 for x in v)):
@@ -138,8 +155,11 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
         return ["this is a figure.json from SUNA 1.x (no \"schema\": 2). idofig does not convert it: "
                 "rebuild the figure with producers (see docs/producers.md); its figure.svg keeps working "
                 "in the manuscript until then"]
-    if doc.get("schema") != FIGURE_SCHEMA:
-        p.append(f"schema must be {FIGURE_SCHEMA} (found {doc.get('schema')!r})")
+    # Either schema is read whatever the keys (a 0.3 development build wrote the 0.3 keys under
+    # 2, and so does a hand edit); a write gives the file the one it needs (figure_schema), and
+    # compose warns about a 2 that needs a 3 until then.
+    if doc.get("schema") not in (2, 3):
+        p.append(f"schema must be 2 or 3 (found {doc.get('schema')!r})")
     fid = doc.get("id")
     if not _id_ok(fid):
         p.append("id must be a figure id (lowercase letters, digits, - _ .)")
@@ -147,7 +167,7 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
         p.append(f"id {fid!r} must equal the directory name {expected_id!r}")
     w = doc.get("width")
     if not isinstance(w, dict) or not (
-        ("preset" in w and w["preset"] in {"single", "onehalf", "double"} and len(w) == 1)
+        ("preset" in w and _one_of(w["preset"], {"single", "onehalf", "double"}) and len(w) == 1)
         or ("mm" in w and _is_num(w["mm"]) and w["mm"] > 0 and len(w) == 1)
     ):
         p.append('width must be {"preset": "single"|"onehalf"|"double"} or {"mm": <number>}')
@@ -162,16 +182,24 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
         if not isinstance(lt, dict):
             p.append("letters must be an object")
         else:
-            if "case" in lt and lt["case"] not in {"lower", "upper"}:
+            # Every key is checked: an unknown one used to pass and do nothing, so a typo such
+            # as "offset" for "offset_mm" looked accepted while the letters never moved.
+            for k in sorted(set(lt) - LETTER_KEYS):
+                p.append(f"letters.{k} is not a letters key (allowed: {', '.join(sorted(LETTER_KEYS))})")
+            if "case" in lt and not _one_of(lt["case"], {"lower", "upper"}):
                 p.append("letters.case must be lower or upper")
+            if "weight" in lt and not _one_of(lt["weight"], {"normal", "bold"}):
+                p.append("letters.weight must be normal or bold")
+            if "wrapper" in lt and not _one_of(lt["wrapper"], {"none", "parens", "period"}):
+                p.append("letters.wrapper must be none, parens or period")
             if "size_pt" in lt and not (_is_num(lt["size_pt"]) and lt["size_pt"] > 0):
                 p.append("letters.size_pt must be a positive number")
             if "show" in lt and not isinstance(lt["show"], bool):
                 p.append("letters.show must be true or false")
-            if "offset_mm" in lt and not (
-                isinstance(lt["offset_mm"], list) and len(lt["offset_mm"]) == 2 and all(_is_num(x) for x in lt["offset_mm"])
-            ):
-                p.append("letters.offset_mm must be [dx, dy]")
+            if "offset_mm" in lt and not _is_letter_offset(lt["offset_mm"]):
+                p.append(f"letters.offset_mm must be [dx, dy] in mm, each within ±{LETTER_OFFSET_MM}")
+            if "color" in lt and not is_color(lt["color"]):
+                p.append("letters.color must be a colour")
 
     panels = doc.get("panels", [])
     panel_ids: set[str] = set()
@@ -195,6 +223,8 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
             isinstance(pn["letter"], str) and 0 < len(pn["letter"]) <= 3
         ):
             p.append(f"{where}.letter must be a short label such as 'a', or null")
+        if "letter_offset_mm" in pn and not _is_letter_offset(pn["letter_offset_mm"]):
+            p.append(f"{where}.letter_offset_mm must be [dx, dy] in mm, each within ±{LETTER_OFFSET_MM}")
         place = pn.get("place")
         if not isinstance(place, dict) or not all(_is_num(place.get(k)) for k in ("x", "y", "w", "h")):
             p.append(f"{where}.place must be {{x, y, w, h}} in mm")
@@ -247,7 +277,7 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
                 p.append(f"panel {x!r} is drawn by two producers ({owner[x]!r} and {prid!r})")
             else:
                 owner[x] = str(prid)
-        if pr.get("cost", "cheap") not in {"cheap", "expensive"}:
+        if not _one_of(pr.get("cost", "cheap"), {"cheap", "expensive"}):
             p.append(f"{where}.cost must be cheap or expensive")
         if "timeout_s" in pr and not (_is_num(pr["timeout_s"]) and pr["timeout_s"] > 0):
             p.append(f"{where}.timeout_s must be a positive number")
@@ -266,14 +296,21 @@ def validate_figure(doc: Any, *, expected_id: str | None = None) -> list[str]:
     return p
 
 
+def figure_schema(doc: dict) -> int:
+    """The schema a figure.json is written with: 3 when it uses a key an idofig older than 0.3
+    would ignore without a word (a panel's `letter_offset_mm`, `letters.color`), else 2. Under
+    2, two 0.2.2 servers left running redrew five figures' letters at the figure-wide place, in
+    black, and called them fresh; 0.2.x refuses a 3. A key like those goes on this list."""
+    uses_3 = "color" in doc.get("letters", {}) or any("letter_offset_mm" in pn for pn in doc.get("panels", []))
+    return 3 if uses_3 else 2
+
+
 def load_figure(path: Path | str, *, expected_id: str | None = None) -> dict:
     path = Path(path)
     try:
-        doc = read_json(path)
+        doc = read_json(path)  # not JSON: a SpecError naming the file
     except FileNotFoundError:
         raise SpecError(path, ["file not found"]) from None
-    except ValueError as exc:
-        raise SpecError(path, [f"not valid JSON: {exc}"]) from None
     problems = validate_figure(doc, expected_id=expected_id or path.parent.name)
     if problems:
         raise SpecError(path, problems)
@@ -326,7 +363,9 @@ def apply_ops(doc: dict, ops: list[dict], width_of: Callable[[dict], float] | No
         return _apply_ops(doc, ops, width_of)
     except KeyError as exc:
         raise SpecError("figure.json", [f"operation is missing the field {exc.args[0]!r}"]) from None
-    except (TypeError, ValueError) as exc:
+    except NotJSONError:  # the journal preset a `width` op reads (width_of) names itself, not a bad operation
+        raise
+    except (TypeError, ValueError, OverflowError) as exc:  # OverflowError: a `place` of 10**400 mm
         raise SpecError("figure.json", [f"bad operation: {exc}"]) from None
 
 
@@ -335,7 +374,7 @@ def apply_ops(doc: dict, ops: list[dict], width_of: Callable[[dict], float] | No
 # the silent kind of wrong an agent cannot see.
 OP_FIELDS: dict[str, set[str]] = {
     "place": {"panel", "x", "y", "w", "h"},
-    "letter": {"panel", "letter"},
+    "letter": {"panel", "letter", "offset_mm"},
     "panel.add": {"id", "letter", "place", "image"},
     "panel.remove": {"id"},
     "producer.set": {"id", "run", "inputs", "panels", "cost", "timeout_s"},
@@ -397,11 +436,21 @@ def _apply_ops(doc: dict, ops: list[dict], width_of: Callable[[dict], float] | N
                     place[k] = round(float(op[k]), 3)
             pn["place"] = place
         elif kind == "letter":
+            # Only the fields sent change: read as null, a missing `letter` removed the letter.
+            if "letter" not in op and "offset_mm" not in op:
+                raise SpecError("figure.json", ["operation 'letter' needs letter, offset_mm or both"])
             pn = _find(out["panels"], op["panel"], "panel")
-            if op.get("letter") is None:
-                pn.pop("letter", None)
-            else:
-                pn["letter"] = op["letter"]
+            if "letter" in op:
+                if op["letter"] is None:
+                    pn.pop("letter", None)
+                else:
+                    pn["letter"] = op["letter"]
+            if "offset_mm" in op:
+                off = op["offset_mm"]
+                if off is None:
+                    pn.pop("letter_offset_mm", None)
+                else:  # rounded to µm like `place`; anything that is not [dx, dy] fails validation
+                    pn["letter_offset_mm"] = [round(v, 3) for v in off] if _is_pair(off) else copy.deepcopy(off)
         elif kind == "panel.add":
             entry = {k: op[k] for k in ("id", "letter", "place", "image") if k in op}
             out["panels"].append(entry)
@@ -488,6 +537,7 @@ def update_figure(path: Path | str, ops: list[dict],
     problems = validate_figure(after, expected_id=path.parent.name)
     if problems:
         raise SpecError(path, problems)
+    after["schema"] = figure_schema(after)  # on a valid figure; 2 or 3 is valid either way
     if after != before:
         write_json(path, after)
     return before, after
@@ -514,6 +564,11 @@ def validate_style(doc: Any) -> list[str]:
         for k, v in props.items():
             if not isinstance(v, (str, int, float, bool)):
                 p.append(f"parts[{name!r}].{k} must be a string, number or boolean")
+            elif not isinstance(v, (str, bool)) and not is_finite_number(v):
+                # Here, where every write passes (the property check runs only on a part the
+                # manifest names): `dx_mm=nan` on a wildcard reached the file, and every workspace
+                # reply carried a NaN JSON.parse rejects; a 400-digit int came back as null.
+                p.append(f"parts[{name!r}].{k} must be a finite number")
     return p
 
 
@@ -522,10 +577,7 @@ def load_style(path: Path | str) -> dict:
     path = Path(path)
     if not path.exists():
         return {"schema": STYLE_SCHEMA, "parts": {}}
-    try:
-        doc = read_json(path)
-    except ValueError as exc:
-        raise SpecError(path, [f"not valid JSON: {exc}"]) from None
+    doc = read_json(path)  # not JSON: a SpecError naming the file
     problems = validate_style(doc)
     if problems:
         raise SpecError(path, problems)

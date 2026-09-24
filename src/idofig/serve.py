@@ -1,4 +1,6 @@
-"""``idofig serve``: JSON-RPC 2.0 over stdio, one JSON object per line.
+"""``idofig serve``: JSON-RPC 2.0 over stdio, one JSON object per line (no batches: a line
+that is not strict JSON — NaN, Infinity and 1e999 are not — is answered with error -32700,
+one that is not an object with -32600, and the server goes on).
 
 Applications (SUNA) keep one server per project so composing takes milliseconds rather
 than a Python start-up. Every write goes through the same functions the CLI uses.
@@ -33,7 +35,7 @@ locate        {figure, panel, part}     → candidate code lines that make the p
 journal                                 → the project's journal preset (resolved)
 journals                                → bundled journal presets
 props                                   → the style property table, per part kind
-validate_style {kind, props, group?}    → the problems with setting props on a part of kind ([]: valid)
+validate_style {kind, props, group?, role?}  → the problems with setting props on a part of kind ([]: valid)
 shutdown                                → {bye}
 """
 
@@ -54,7 +56,7 @@ from ._version import __version__
 from .build import build, check, compliance, figure_status, status
 from .compose import compose
 from .errors import IdofigError, SpecError
-from .fsutil import read_json, rel, sha256_file, write_atomic
+from .fsutil import loads, read_json, rel, sha256_file, write_atomic
 from .project import Project
 
 
@@ -71,7 +73,9 @@ class Server:
 
     # -- transport
     def send(self, obj: dict) -> None:
-        line = json.dumps(obj, ensure_ascii=False)
+        """Write one message; ValueError, before a byte is written, for a NaN or Infinity (a
+        line JSON.parse refuses: the client waited for an answer that never came)."""
+        line = json.dumps(obj, ensure_ascii=False, allow_nan=False)
         with self.write_lock:
             self.out.write(line + "\n")
             self.out.flush()
@@ -100,7 +104,9 @@ class Server:
             if not line:
                 continue
             try:
-                msg = json.loads(line)
+                # Strictly, as replies are written: an id of NaN or 1e999 could be echoed in no
+                # answer, and the ValueError ended the server with every request behind it.
+                msg = loads(line)
             except ValueError as exc:
                 self.send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"parse error: {exc}"}})
                 continue
@@ -122,6 +128,12 @@ class Server:
             time.sleep(0.02)
 
     def dispatch(self, msg: dict) -> None:
+        if not isinstance(msg, dict):
+            # A batch (`[{…}]`) or a bare `5` raised out of `serve`: the server ended with no
+            # reply, and every request queued behind it went unanswered.
+            self.send({"jsonrpc": "2.0", "id": None, "error": {
+                "code": -32600, "message": "invalid request: expected a JSON object (batches are not supported)"}})
+            return
         rid = msg.get("id")
         method = msg.get("method")
         params = msg.get("params") or {}
@@ -138,7 +150,10 @@ class Server:
             self.reply(rid, error=exc)
             return
         if result is not _DEFERRED:
-            self.reply(rid, result)
+            try:
+                self.reply(rid, result)
+            except ValueError as exc:
+                self.reply(rid, error=IdofigError(f"{method}: the answer holds a number JSON cannot carry ({exc})"))
 
     # -- methods
     def m_hello(self, rid):
@@ -279,7 +294,7 @@ class Server:
             info = parts.get(part)
             if info is not None:
                 problems = P.validate(info["kind"], {k: v for k, v in props.items() if v is not None},
-                                      group=bool(info.get("group")))
+                                      group=bool(info.get("group")), role=info.get("role"))
                 if problems:
                     raise SpecError(f"{figure}/{panel}/{part}", problems)
         path = pdir / "style.json"
@@ -301,7 +316,8 @@ class Server:
         _, after = S.move_style(path, old, new)
         info = parts.get(new)
         if info is not None:
-            problems = P.validate(info["kind"], after["parts"][new], group=bool(info.get("group")))
+            problems = P.validate(info["kind"], after["parts"][new], group=bool(info.get("group")),
+                                  role=info.get("role"))
             if problems:
                 if before_text is not None:
                     write_atomic(path, before_text)
@@ -320,10 +336,14 @@ class Server:
         if text is None:
             target.unlink(missing_ok=True)
         else:
+            try:
+                doc = loads(text)
+            except ValueError as exc:
+                raise SpecError(path, [f"not valid JSON: {exc}"]) from None
             if target.name == "figure.json":
-                problems = S.validate_figure(json.loads(text), expected_id=target.parent.name)
+                problems = S.validate_figure(doc, expected_id=target.parent.name)
             else:
-                problems = S.validate_style(json.loads(text))
+                problems = S.validate_style(doc)
             if problems:
                 raise SpecError(path, problems)
             write_atomic(target, text)
@@ -362,8 +382,8 @@ class Server:
     def m_props(self, rid):
         return P.describe()
 
-    def m_validate_style(self, rid, kind, props, group=False):
-        return P.validate(kind, props, group=group)
+    def m_validate_style(self, rid, kind, props, group=False, role=None):
+        return P.validate(kind, props, group=group, role=role)
 
     def m_shutdown(self, rid):
         self.running = False

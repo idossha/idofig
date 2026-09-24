@@ -8,12 +8,12 @@ journal with no one-and-a-half width is an error, never a guess.
 
 from __future__ import annotations
 
-import json
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 
 from .errors import SpecError
+from .fsutil import loads, read_json
 
 WIDTH_PRESETS = ("single", "onehalf", "double")
 
@@ -36,12 +36,14 @@ def load(ref: str, root: str | None = None) -> dict:
     Every call returns a fresh dict, so callers may modify it.
     """
     if ref in bundled_ids():
-        return json.loads(_bundled(ref))
+        return loads(_bundled(ref))
     path = Path(ref)
     if not path.is_absolute() and root:
         path = Path(root) / path
     if path.is_file():
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # Read strictly, as every idofig file is (fsutil): a preset a Python tool wrote with a
+        # blank cell as `NaN` went out bare in every workspace reply, which JSON.parse refuses.
+        data = read_json(path)
         # A full SUNA profile carries the figure preset under "figures".
         if "figures" in data and "widthPresetsMm" not in data:
             fig = dict(data["figures"])
@@ -81,6 +83,7 @@ def letter_style(journal: dict, override: dict | None) -> dict:
         "wrapper": label.get("wrapper") or "none",
         "size_pt": 8.0,
         "offset_mm": [0.0, 0.0],
+        "color": "#000000",
     }
     if override:
         style.update({k: v for k, v in override.items() if v is not None})

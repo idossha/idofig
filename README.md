@@ -65,7 +65,7 @@ idf.save(p)                               # names parts, applies style.json, wri
 `idofig build` runs producers with a private output directory and publishes only after the
 run succeeds; a direct `python dose.py` publishes in place and recomposes the figure.
 
-## figure.json (schema 2)
+## figure.json (schema 2, or 3)
 
 ```json
 {
@@ -97,6 +97,16 @@ run succeeds; a direct `python dose.py` publishes in place and recomposes the fi
   discovered automatically.
 * `panels[].place` is in millimetres from the figure's top-left. Resizing a panel makes it
   stale: it is redrawn at the new size, never stretched.
+* Each panel's `letter` is drawn at compose time in the journal's style; reordering
+  `panels[]` does not reletter them. `letters` places and styles them all (`offset_mm`,
+  `size_pt`, `case`, `weight`, `wrapper`, `color`); a panel's own `letter_offset_mm: [dx, dy]`
+  moves just its letter from there — composing only, no redraw. A figure that uses
+  `letter_offset_mm` or `letters.color` is written with `"schema": 3`, which an idofig
+  older than 0.3 refuses rather than drawing those letters without them; any other stays 2.
+  Adding either by hand, set `"schema": 3` too (compose warns until you do). An idofig older
+  than 0.3 refuses a schema-3 figure.json wherever it reads it, a producer's
+  `idofig.panels()` included: upgrade the idofig a producer runs before moving or colouring
+  a letter.
 * Annotations (`text`, `arrow`, `line`, `bracket`, `box`) anchor to a figure position, a
   panel position, a **named part** (`{"panel", "part", "at"}`), or **data coordinates**
   (`{"panel", "axes", "data": [x, y]}`) — so a bracket follows its bars when the data move.
@@ -116,18 +126,52 @@ run succeeds; a direct `python dose.py` publishes in place and recomposes the fi
 `idofig parts FIG PANEL` lists the names; `idofig style` edits the file with validation.
 Wildcards (`*`) address groups; the most specific entry wins.
 
+Every refinement is a small named delta that survives the script being re-run:
+
+| to adjust | where | unit |
+|---|---|---|
+| a panel's position or size | `figure.json` `panels[].place` | mm |
+| every letter at once | `figure.json` `letters` | pt / mm |
+| one panel's letter | `figure.json` `panels[].letter_offset_mm` | mm, y down |
+| a part's look | `style.json` (`fontsize`, `color`, …) | pt, … |
+| a text or legend part's position | `style.json` `dx_mm`, `dy_mm` | mm, y down |
+| an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
+| marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
+
+`dx_mm`/`dy_mm` move a part after the layout is frozen, so it lands exactly that far from
+where the script drew it and nothing else moves; the freeze lasts that one save, so a
+script (or notebook) that saves again is laid out afresh. Tick labels cannot be moved, a
+legend's entries and title move only with their legend, and a 3D axis takes no tick-mark
+properties (it draws its ticks from its own settings) — a `gid` on the part changes none of
+that.
+
+Upgrading from idofig 0.2.x makes every panel stale (the lock's `render` number) until
+`idofig build` redraws it; a panel whose producer runs an interpreter with an older idofig
+of its own is not stale after that, but warns to upgrade that idofig and then run
+`idofig build --force <fig>` — and, once a letter is moved or coloured (schema 3), that its
+next build fails until then. See SPEC.md, *figure.lock.json*.
+
 ## Journals
 
 Bundled presets (`idofig journals`) carry each journal's stated column widths, font floor
 and ceiling, line weights and panel-label style, with sources. Where a journal states no
-number, idofig states none. Select one in `idofig.toml` / `[tool.idofig]` (`journal =
-"nature"`), per figure (`"journal"` in figure.json), or point at a JSON file. A SUNA project
-that sets none follows the journal chosen in SUNA (`suna.json`'s `activeProfileId`) when
-idofig bundles it.
+number, idofig states none. `idofig check` holds what was drawn to those numbers: text
+below the font floor and a fixed `height` above the journal's maximum fail it; a width that is
+none of the journal's, panel letters below the floor, text above the ceiling, a stroke
+thinner than the line weight (an edge drawn in no colour, or in its own face colour, is no
+stroke, but a '+' or 'x' marker is all stroke; a collection of several widths is held to its
+thinnest; a drawn axis' tick marks are held to their `tickwidth`), ink outside a panel, and a panel or letter past the figure's edge are warnings. A group of parts that break a rule is one finding
+naming the group (`main.xtick.* is 4 pt (6 parts); …`), not one per tick label.
+
+Select one in `idofig.toml` / `[tool.idofig]` (`journal = "nature"`), per figure
+(`"journal"` in figure.json), or point at a JSON file. A SUNA project that sets none follows
+the journal chosen in SUNA (`suna.json`'s `activeProfileId`) when idofig bundles it.
 
 ## For applications
 
-`idofig serve` speaks JSON-RPC 2.0 over stdio, one JSON object per line. An application
+`idofig serve` speaks JSON-RPC 2.0 over stdio, one JSON object per line (a line that is not
+strict JSON, one holding `NaN`, `Infinity` or `1e999` included, is answered with error -32700,
+one that is not an object, a batch say, with -32600, and the server goes on). An application
 keeps one server per project, so composing takes milliseconds rather than a Python
 start-up; SUNA embeds idofig this way. `idofig rpc METHOD '{"param": …}'` calls one method
 once, through the same code, and prints `{result}` or `{error}`. Every method
@@ -153,8 +197,8 @@ once, through the same code, and prints `{result}` or `{error}`. Every method
 | `locate` | `figure, panel, part` | candidate code lines that make the part |
 | `journal` | | the project's journal preset, resolved |
 | `journals` | | the bundled journal presets |
-| `props` | | the style property table, per part kind |
-| `validate_style` | `kind, props, group?` | problems with setting `props` on a part of `kind` (empty: valid) |
+| `props` | | the style property table, per part kind, and the properties refused by part role |
+| `validate_style` | `kind, props, group?, role?` | problems with setting `props` on a part of `kind` (and the manifest's `role`; empty: valid) |
 | `shutdown` | | stops the server |
 
 The server announces itself with a `ready` event. A build streams `build.start`,

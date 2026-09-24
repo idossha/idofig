@@ -83,6 +83,10 @@ def cmd_status(args) -> int:
                 print("      " + p.error.splitlines()[0])
             if p.detached_styles:
                 print(f"      detached style: {', '.join(p.detached_styles)}")
+            for inv in p.invalid_styles:
+                print(f"      ! ignored {inv['part']}.{inv['prop']}: {inv['reason']}")
+            for w in p.warnings:  # e.g. a producer's own idofig that cannot read this figure.json
+                print(f"      ! {w}")
         for d in s.detached_annotations:
             print(f"  ! annotation {d['id']}: {d['reason']}")
         for w in s.warnings:
@@ -200,7 +204,7 @@ def cmd_style(args) -> int:
         props[k] = _value(v)
     try:
         parts = read_json(project.panel_dir(args.figure, args.panel) / "manifest.json").get("parts", {})
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):  # none, or not JSON: written unchecked, as the server does
         parts = {}
     if parts and args.part not in parts and "*" not in args.part:
         raise IdofigError(f"panel {args.panel!r} has no part {args.part!r} (see `idofig parts {args.figure} {args.panel}`)")
@@ -208,7 +212,8 @@ def cmd_style(args) -> int:
     if info:
         from .props import validate
 
-        problems = validate(info["kind"], {k: v for k, v in props.items() if v is not None}, group=bool(info.get("group")))
+        problems = validate(info["kind"], {k: v for k, v in props.items() if v is not None},
+                            group=bool(info.get("group")), role=info.get("role"))
         if problems:
             raise IdofigError("; ".join(problems))
     S.update_style(path, args.part, props)

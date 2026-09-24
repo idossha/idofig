@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import stat
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+from .errors import NotJSONError, SpecError
 
 
 def write_atomic(path: Path | str, data: str | bytes) -> None:
@@ -36,18 +39,49 @@ def write_atomic(path: Path | str, data: str | bytes) -> None:
         raise
 
 
+# JSON has no NaN or Infinity, though Python's json reads and writes them: a reply carrying one
+# is a line JSON.parse refuses, and SUNA waited for it. idofig writes none, and reads a file
+# with one (or with a number too large for a float, `1e999`) as invalid JSON, naming the file.
+
+
 def dump_json(obj: Any) -> str:
     """Canonical JSON for files people diff: 2-space indent, UTF-8, trailing newline."""
-    return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
+    return json.dumps(obj, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
 
 
 def write_json(path: Path | str, obj: Any) -> None:
-    write_atomic(path, dump_json(obj))
+    try:
+        text = dump_json(obj)
+    except ValueError as exc:  # a NaN where nothing checks numbers (figure.json's `app.set`)
+        raise SpecError(path, [f"not JSON: {exc}"]) from None
+    write_atomic(path, text)
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not a JSON number")
+
+
+def _finite(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"{text} is too large for a number")
+    return value
+
+
+def loads(text: str) -> Any:
+    """``json.loads``, refusing NaN, Infinity and a number too large for a float (ValueError)."""
+    return json.loads(text, parse_constant=_no_constant, parse_float=_finite)
 
 
 def read_json(path: Path | str) -> Any:
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+    """A JSON file, read strictly (:func:`loads`). One that is not JSON is a ``NotJSONError``
+    naming it (a ValueError too): unnamed, `parts`, `style` and `locate` ended in a traceback
+    on a manifest idofig 0.2.2 wrote with a NaN in it."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return loads(fh.read())
+    except ValueError as exc:  # UnicodeDecodeError too
+        raise NotJSONError(path, [f"not valid JSON: {exc}"]) from None
 
 
 def sha256_bytes(data: bytes) -> str:

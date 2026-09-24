@@ -19,6 +19,11 @@ class SpecError(IdofigError):
         super().__init__(f"{self.path} is not valid:\n{lines}")
 
 
+class NotJSONError(SpecError, ValueError):
+    """A file idofig reads is not JSON (``fsutil.read_json``). A ValueError too, so a reader that
+    goes on without a file it cannot read (a manifest, the lock) still does."""
+
+
 class ContextError(IdofigError):
     """idofig could not tell which project, figure or panel a call belongs to."""
 

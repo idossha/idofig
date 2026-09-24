@@ -171,7 +171,7 @@ def test_a_narrower_figure_keeps_its_layout(project):
     places = [p["place"] for p in after["panels"]]
     single = 89.0  # the default journal's single column
     assert all(p["x"] + p["w"] <= single + 1e-6 for p in places), places
-    assert not any("extends past" in w for w in reply["result"]["compose"]["warnings"])
+    assert not any("past the figure's" in w for w in reply["result"]["compose"]["warnings"])
     # a resized panel is stale until it is redrawn at its new size
     st = status(project)[0].to_json()
     assert all(p["state"] == "stale" for p in st["panels"])

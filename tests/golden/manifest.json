@@ -1,0 +1,769 @@
+{
+  "schema": 1,
+  "figure": "fig-1",
+  "panel": "a",
+  "render": 2,
+  "size": {
+    "w_pt": 249.449,
+    "h_pt": 170.079,
+    "w_mm": 88.0,
+    "h_mm": 60.0
+  },
+  "parts": {
+    "figure.background": {
+      "kind": "patch",
+      "role": "background",
+      "stability": "semantic",
+      "bbox": [
+        0.0,
+        0.0,
+        249.449,
+        170.079
+      ],
+      "props": {
+        "facecolor": "#ffffff",
+        "edgecolor": "#ffffff",
+        "linewidth": 0.0,
+        "linestyle": "solid",
+        "alpha": null,
+        "visible": true,
+        "hatch": null
+      }
+    },
+    "main": {
+      "kind": "axes",
+      "role": "axes",
+      "stability": "named",
+      "bbox": [
+        31.246,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "props": {
+        "facecolor": "#ffffff",
+        "visible": true
+      }
+    },
+    "main.background": {
+      "kind": "patch",
+      "role": "background",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        31.246,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "props": {
+        "facecolor": "#ffffff",
+        "edgecolor": "none",
+        "linewidth": 0.0,
+        "linestyle": "solid",
+        "alpha": null,
+        "visible": true,
+        "hatch": null
+      }
+    },
+    "main.title": {
+      "kind": "text",
+      "role": "title",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        127.366,
+        3.0,
+        150.329,
+        9.57
+      ],
+      "props": {
+        "text": "panel a",
+        "fontsize": 7.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0
+      }
+    },
+    "main.xlabel": {
+      "kind": "text",
+      "role": "xlabel",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        124.838,
+        160.509,
+        152.857,
+        167.079
+      ],
+      "props": {
+        "text": "condition",
+        "fontsize": 7.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0
+      }
+    },
+    "main.xaxis": {
+      "kind": "axis",
+      "role": "axis",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": null,
+      "props": {
+        "visible": true,
+        "tickdir": "out",
+        "ticklength": 2.5,
+        "tickwidth": 0.6
+      }
+    },
+    "main.ylabel": {
+      "kind": "text",
+      "role": "ylabel",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        3.0,
+        65.09,
+        9.57,
+        93.884
+      ],
+      "props": {
+        "text": "response",
+        "fontsize": 7.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 90.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0
+      }
+    },
+    "main.yaxis": {
+      "kind": "axis",
+      "role": "axis",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": null,
+      "props": {
+        "visible": true,
+        "tickdir": "out",
+        "ticklength": 2.5,
+        "tickwidth": 0.6
+      }
+    },
+    "main.spine.left": {
+      "kind": "spine",
+      "role": "spine",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        28.746,
+        14.096,
+        31.246,
+        144.878
+      ],
+      "props": {
+        "visible": true,
+        "linewidth": 0.6,
+        "color": "#000000"
+      }
+    },
+    "main.spine.right": {
+      "kind": "spine",
+      "role": "spine",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        246.449,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "props": {
+        "visible": true,
+        "linewidth": 0.6,
+        "color": "#000000"
+      }
+    },
+    "main.spine.bottom": {
+      "kind": "spine",
+      "role": "spine",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        31.246,
+        144.878,
+        246.449,
+        147.378
+      ],
+      "props": {
+        "visible": true,
+        "linewidth": 0.6,
+        "color": "#000000"
+      }
+    },
+    "main.spine.top": {
+      "kind": "spine",
+      "role": "spine",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        31.246,
+        14.096,
+        246.449,
+        14.096
+      ],
+      "props": {
+        "visible": true,
+        "linewidth": 0.6,
+        "color": "#000000"
+      }
+    },
+    "main.series.control.0": {
+      "kind": "patch",
+      "role": "mark",
+      "stability": "positional",
+      "parent": "main.series.control",
+      "bbox": [
+        41.028,
+        82.601,
+        96.925,
+        144.878
+      ],
+      "props": {
+        "facecolor": "#0072b2",
+        "edgecolor": "none",
+        "linewidth": 0.6,
+        "linestyle": "solid",
+        "alpha": null,
+        "visible": true,
+        "hatch": null
+      }
+    },
+    "main.series.control.1": {
+      "kind": "patch",
+      "role": "mark",
+      "stability": "positional",
+      "parent": "main.series.control",
+      "bbox": [
+        110.899,
+        20.324,
+        166.796,
+        144.878
+      ],
+      "props": {
+        "facecolor": "#0072b2",
+        "edgecolor": "none",
+        "linewidth": 0.6,
+        "linestyle": "solid",
+        "alpha": null,
+        "visible": true,
+        "hatch": null
+      }
+    },
+    "main.series.control.2": {
+      "kind": "patch",
+      "role": "mark",
+      "stability": "positional",
+      "parent": "main.series.control",
+      "bbox": [
+        180.77,
+        51.463,
+        236.667,
+        144.878
+      ],
+      "props": {
+        "facecolor": "#0072b2",
+        "edgecolor": "none",
+        "linewidth": 0.6,
+        "linestyle": "solid",
+        "alpha": null,
+        "visible": true,
+        "hatch": null
+      }
+    },
+    "main.series.control": {
+      "kind": "patch",
+      "role": "series",
+      "stability": "semantic",
+      "parent": "main",
+      "group": true,
+      "members": [
+        "main.series.control.0",
+        "main.series.control.1",
+        "main.series.control.2"
+      ],
+      "bbox": [
+        41.028,
+        20.324,
+        236.667,
+        144.878
+      ]
+    },
+    "main.series.trend": {
+      "kind": "line",
+      "role": "series",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        68.976,
+        32.78,
+        208.718,
+        70.146
+      ],
+      "props": {
+        "color": "#d55e00",
+        "linewidth": 1.0,
+        "linestyle": "-",
+        "alpha": null,
+        "visible": true,
+        "marker": "None",
+        "markersize": 3.0,
+        "markerfacecolor": "#d55e00",
+        "markeredgecolor": "#d55e00"
+      }
+    },
+    "main.legend": {
+      "kind": "legend",
+      "role": "legend",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        203.841,
+        17.096,
+        243.449,
+        36.158
+      ],
+      "props": {
+        "visible": true,
+        "frameon": false,
+        "fontsize": 6.0,
+        "title": "",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0
+      }
+    },
+    "main.legend.frame": {
+      "kind": "patch",
+      "role": "legend-frame",
+      "stability": "semantic",
+      "parent": "main.legend",
+      "bbox": null,
+      "props": {
+        "facecolor": "#ffffff",
+        "edgecolor": "#cccccc",
+        "linewidth": 0.6,
+        "linestyle": "solid",
+        "alpha": 0.8,
+        "visible": false,
+        "hatch": null
+      }
+    },
+    "main.legend.trend": {
+      "kind": "text",
+      "role": "legend-entry",
+      "stability": "semantic",
+      "parent": "main.legend",
+      "bbox": [
+        223.041,
+        19.496,
+        236.715,
+        25.127
+      ],
+      "props": {
+        "text": "trend",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.legend.control": {
+      "kind": "text",
+      "role": "legend-entry",
+      "stability": "semantic",
+      "parent": "main.legend",
+      "bbox": [
+        223.041,
+        28.127,
+        241.049,
+        33.758
+      ],
+      "props": {
+        "text": "control",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.xtick.a": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        66.975,
+        150.878,
+        70.978,
+        156.509
+      ],
+      "props": {
+        "text": "A",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.xtick.b": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        136.846,
+        150.878,
+        140.848,
+        156.509
+      ],
+      "props": {
+        "text": "B",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.xtick.c": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        206.552,
+        150.878,
+        210.885,
+        156.509
+      ],
+      "props": {
+        "text": "C",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.xtick.*": {
+      "kind": "text",
+      "role": "ticks",
+      "stability": "semantic",
+      "parent": "main",
+      "group": true,
+      "members": [
+        "main.xtick.a",
+        "main.xtick.b",
+        "main.xtick.c"
+      ],
+      "bbox": [
+        66.975,
+        150.878,
+        210.885,
+        156.509
+      ]
+    },
+    "main.ytick.0-00": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        142.694,
+        25.246,
+        148.325
+      ],
+      "props": {
+        "text": "0.00",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.0-25": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        127.125,
+        25.246,
+        132.756
+      ],
+      "props": {
+        "text": "0.25",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.0-50": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        111.556,
+        25.246,
+        117.187
+      ],
+      "props": {
+        "text": "0.50",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.0-75": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        95.986,
+        25.246,
+        101.617
+      ],
+      "props": {
+        "text": "0.75",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.1-00": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        80.417,
+        25.246,
+        86.048
+      ],
+      "props": {
+        "text": "1.00",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.1-25": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        64.848,
+        25.246,
+        70.479
+      ],
+      "props": {
+        "text": "1.25",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.1-50": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        49.279,
+        25.246,
+        54.909
+      ],
+      "props": {
+        "text": "1.50",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.1-75": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        33.709,
+        25.246,
+        39.34
+      ],
+      "props": {
+        "text": "1.75",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.2-00": {
+      "kind": "text",
+      "role": "tick",
+      "stability": "semantic",
+      "parent": "main",
+      "bbox": [
+        13.57,
+        18.14,
+        25.246,
+        23.771
+      ],
+      "props": {
+        "text": "2.00",
+        "fontsize": 6.0,
+        "fontweight": "normal",
+        "fontstyle": "normal",
+        "fontfamily": "Liberation Sans",
+        "color": "#000000",
+        "alpha": null,
+        "visible": true,
+        "rotation": 0.0
+      }
+    },
+    "main.ytick.*": {
+      "kind": "text",
+      "role": "ticks",
+      "stability": "semantic",
+      "parent": "main",
+      "group": true,
+      "members": [
+        "main.ytick.0-00",
+        "main.ytick.0-25",
+        "main.ytick.0-50",
+        "main.ytick.0-75",
+        "main.ytick.1-00",
+        "main.ytick.1-25",
+        "main.ytick.1-50",
+        "main.ytick.1-75",
+        "main.ytick.2-00"
+      ],
+      "bbox": [
+        13.57,
+        18.14,
+        25.246,
+        148.325
+      ]
+    }
+  },
+  "axes": {
+    "main": {
+      "bbox": [
+        31.246,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "xscale": "linear",
+      "yscale": "linear",
+      "xlim": [
+        -0.54,
+        2.5400000000000005
+      ],
+      "ylim": [
+        0.0,
+        2.1
+      ]
+    }
+  },
+  "style": {
+    "applied": [],
+    "detached": [],
+    "invalid": []
+  },
+  "warnings": []
+}

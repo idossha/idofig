@@ -11,13 +11,22 @@ file, never applied to something else. An invalid property is reported and skipp
 from __future__ import annotations
 
 import fnmatch
+import math
+from contextlib import ExitStack
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
-from matplotlib.colors import to_hex
+import numpy as np
+from matplotlib.collections import PathCollection
+from matplotlib.colors import to_hex, to_rgba
+from matplotlib.legend import Legend
+from matplotlib.text import Annotation
+from matplotlib.transforms import ScaledTranslation
 
 from . import props as P
-from .naming import PartTable, kind_of
+from .naming import PartTable, axis_letters, kind_of
+from .units import MM_PER_IN
 
 
 @dataclass
@@ -28,84 +37,179 @@ class StyleReport:
     base: dict[str, dict] = field(default_factory=dict)
 
 
+class Undo(ExitStack):
+    """What one save changes on the script's figure to write it (canvas, dpi, size, a frozen
+    layout, moved parts, wrapped draws), put back when the save closes it, last change first.
+    Left in place, a figure saved again (a notebook re-running its save cell) kept the first
+    save's layout — a y label lengthened in between was clipped 2 mm off the panel — and an
+    offset removed in between kept its part moved. Style overrides stay set (SPEC.md, Moving a
+    part): putting one back takes more than a value (a size replaces every mark's size)."""
+
+    def keep(self, obj: Any, *names: str) -> None:
+        """Put these attributes back as they are now (the last named first)."""
+        for name in names:
+            self.callback(setattr, obj, name, getattr(obj, name))
+
+    def set(self, obj: Any, name: str, value: Any) -> None:
+        self.keep(obj, name)
+        setattr(obj, name, value)
+
+    def method(self, obj: Any, name: str, fn: Any) -> None:
+        """Replace a method on one object; closing takes the replacement off again."""
+        if name in vars(obj):
+            self.keep(obj, name)
+        else:
+            self.callback(vars(obj).pop, name, None)  # its class's method answers again
+        setattr(obj, name, fn)
+
+
 def _hex(c: Any) -> str | None:
+    """A colour as ``#rrggbb``, or ``none`` when it is fully transparent: matplotlib's "none" is
+    (0, 0, 0, 0), and read as black, pcolor's default edge, drawn in no colour, was a stroke
+    finding, and an editor showed black edges on bars that had none."""
     try:
-        return to_hex(c, keep_alpha=False)
+        rgba = to_rgba(c)
     except (ValueError, TypeError):
         return None
+    return "none" if rgba[3] == 0 else to_hex(rgba, keep_alpha=False)
+
+
+def _shared_color(colors: Any) -> str | None:
+    """A collection's colour: ``none`` when it draws none, its one colour, or None when its
+    marks have several."""
+    if len(colors) == 0 or not colors[:, 3].any():
+        return "none"
+    return _hex(colors[0]) if len(colors) == 1 else None
+
+
+def _offsets(artist: Any) -> dict:
+    """A part's style offsets: 0 unless ``apply`` recorded one for this save (a script never
+    offsets a part, so 0 is its ``base`` too)."""
+    return {k: getattr(artist, f"_idofig_{k}", 0.0) for k in P.OFFSETS}
 
 
 def get_props(artist: Any, kind: str) -> dict:
-    """Current values of the styleable properties (for the manifest and for 'was X in code')."""
+    """Current values of the styleable properties (for the manifest and for 'was X in code').
+
+    Not read back, so never in the manifest's ``props`` or ``base`` (SPEC.md says the same):
+    a legend's ``loc``, a patch's ``color``, a collection's ``color``, its ``size`` unless its
+    marks share one, and its ``cmap``/``vmin``/``vmax`` unless it maps values to colours."""
     try:
         if kind == "text":
             return {
-                "text": artist.get_text(), "fontsize": round(float(artist.get_fontsize()), 3),
+                "text": artist.get_text(), "fontsize": _num(artist.get_fontsize()),
                 "fontweight": artist.get_fontweight(), "fontstyle": artist.get_fontstyle(),
                 "fontfamily": (artist.get_fontfamily() or [None])[0], "color": _hex(artist.get_color()),
-                "alpha": artist.get_alpha(), "visible": artist.get_visible(), "rotation": artist.get_rotation(),
+                "alpha": _alpha(artist), "visible": artist.get_visible(),
+                "rotation": _num(artist.get_rotation(), None),
+                **_offsets(artist),
             }
         if kind == "line":
             return {
-                "color": _hex(artist.get_color()), "linewidth": round(float(artist.get_linewidth()), 3),
-                "linestyle": artist.get_linestyle(), "alpha": artist.get_alpha(), "visible": artist.get_visible(),
-                "marker": str(artist.get_marker()), "markersize": round(float(artist.get_markersize()), 3),
+                "color": _hex(artist.get_color()), "linewidth": _num(artist.get_linewidth()),
+                "linestyle": artist.get_linestyle(), "alpha": _alpha(artist), "visible": artist.get_visible(),
+                "marker": str(artist.get_marker()), "markersize": _num(artist.get_markersize()),
                 "markerfacecolor": _hex(artist.get_markerfacecolor()),
                 "markeredgecolor": _hex(artist.get_markeredgecolor()),
             }
         if kind == "patch":
+            # Read back so the stroke check skips an edge drawn with no line style (0 wide:
+            # `bar(…, linestyle="none", linewidth=0.1)` was a finding). A dash pattern reads "--".
+            ls = artist.get_linestyle()
             return {
                 "facecolor": _hex(artist.get_facecolor()), "edgecolor": _hex(artist.get_edgecolor()),
-                "linewidth": round(float(artist.get_linewidth()), 3), "alpha": artist.get_alpha(),
+                "linewidth": _num(artist.get_linewidth()),
+                "linestyle": ls if isinstance(ls, str) else "--", "alpha": _alpha(artist),
                 "visible": artist.get_visible(), "hatch": artist.get_hatch(),
             }
         if kind == "collection":
-            fc = artist.get_facecolor()
-            ec = artist.get_edgecolor()
-            lw = artist.get_linewidth()
+            # An edge in each mark's face colour (`edgecolors="face"`, a scatter's default) merges
+            # into the fill: `face`, no stroke (read as the face colours, a scatter's 0.1 pt edge
+            # was a finding), unless the mark is all stroke. What was set is read: a
+            # colour-mapped collection's mapped colours replace `_edgecolors`.
+            edge = getattr(artist, "_original_edgecolor", None)
+            face = isinstance(edge, str) and edge.lower() == "face" and not _all_stroke(artist)
+            # atleast_1d: an eventplot gives one width, not one per mark; iterated, it raised,
+            # and its 0.1 pt spikes passed Nature's 0.25 pt unread.
+            widths = {_num(w) for w in np.atleast_1d(artist.get_linewidth())}
             out = {
-                "facecolor": _hex(fc[0]) if len(fc) == 1 else None,
-                "edgecolor": _hex(ec[0]) if len(ec) == 1 else None,
-                "linewidth": round(float(lw[0]), 3) if len(lw) else None,
-                "alpha": artist.get_alpha(), "visible": artist.get_visible(),
+                "facecolor": _shared_color(artist.get_facecolor()),
+                "edgecolor": "face" if face else _shared_color(artist.get_edgecolor()),
+                # as for colours: null when the marks differ (the thinnest is `thinnest_pt`)
+                "linewidth": widths.pop() if len(widths) == 1 else None,
+                "alpha": _alpha(artist), "visible": artist.get_visible(),
             }
             if hasattr(artist, "get_sizes") and len(artist.get_sizes()) == 1:
-                out["size"] = float(artist.get_sizes()[0])
+                out["size"] = _num(artist.get_sizes()[0], None)
             if getattr(artist, "get_array", None) is not None and artist.get_array() is not None:
                 out["cmap"] = artist.get_cmap().name
                 vmin, vmax = artist.get_clim()
-                out["vmin"], out["vmax"] = _num(vmin), _num(vmax)
+                out["vmin"], out["vmax"] = _num(vmin, 6), _num(vmax, 6)
             return out
         if kind == "image":
             vmin, vmax = artist.get_clim()
-            return {"alpha": artist.get_alpha(), "visible": artist.get_visible(), "cmap": artist.get_cmap().name,
-                    "vmin": _num(vmin), "vmax": _num(vmax)}
+            return {"alpha": _alpha(artist), "visible": artist.get_visible(), "cmap": artist.get_cmap().name,
+                    "vmin": _num(vmin, 6), "vmax": _num(vmax, 6)}
         if kind == "axes":
             return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible()}
         if kind == "axis":
-            return {"visible": artist.get_visible()}
+            tick = artist.majorTicks[0]  # the tick every later one copies its settings from
+            return {"visible": artist.get_visible(), "tickdir": tick.get_tickdir(),
+                    "ticklength": _num(tick.tick1line.get_markersize()),
+                    "tickwidth": _num(tick.tick1line.get_markeredgewidth())}
         if kind == "spine":
-            return {"visible": artist.get_visible(), "linewidth": round(float(artist.get_linewidth()), 3),
+            return {"visible": artist.get_visible(), "linewidth": _num(artist.get_linewidth()),
                     "color": _hex(artist.get_edgecolor())}
         if kind == "legend":
             texts = artist.get_texts()
             return {"visible": artist.get_visible(), "frameon": artist.get_frame_on(),
-                    "fontsize": round(float(texts[0].get_fontsize()), 3) if texts else None,
-                    "title": artist.get_title().get_text()}
+                    "fontsize": _num(texts[0].get_fontsize()) if texts else None,
+                    "title": artist.get_title().get_text(), **_offsets(artist)}
     except Exception:  # a getter a third-party artist does not implement
         return {}
     return {}
 
 
-def _num(v: Any) -> float | None:
+def _num(v: Any, places: int | None = 3) -> float | None:
+    """``v`` rounded to ``places`` (None: as it is), or None when it is no finite number.
+    matplotlib draws with a NaN without a word (an all-NaN image's limits, `lw=float("nan")`),
+    and a manifest is JSON, which has none: every panel's save failed in the encoder."""
     try:
-        return round(float(v), 6)
+        v = float(v)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(v):
+        return None
+    return v if places is None else round(v, places)
+
+
+def _alpha(artist: Any) -> float | None:
+    """A part's one alpha, or None when it has none or each mark has its own (an array, which
+    stopped every panel's save in the JSON encoder)."""
+    a = artist.get_alpha()
+    return None if np.ndim(a) else _num(a, None)
+
+
+def _all_stroke(coll: Any) -> bool:
+    """Whether a scatter's marks are strokes alone ('+', 'x', '|', '_', '1'–'4', tick markers):
+    their edge, which matplotlib sets to ``face`` itself, is the whole mark, and read as
+    ``face`` a '+' drawn 0.1 pt wide passed Nature's 0.25 pt. Only a scatter is asked: other
+    collections' marks have an inside, and a pcolormesh makes paths of its cells only when
+    asked (0.8 s for 700 × 700)."""
+    if not isinstance(coll, PathCollection):
+        return False
+    return all(len(line) <= 2 for path in coll.get_paths() for line in path.to_polygons(closed_only=False))
 
 
 def _set(artist: Any, kind: str, key: str, value: Any) -> None:
-    if kind == "text":
+    if key in P.OFFSETS:  # recorded now, applied once the layout is frozen (apply_offsets)
+        setattr(artist, f"_idofig_{key}", float(value))
+    elif kind == "text":
+        axis = _axis3d_of(artist) if key == "rotation" else None
+        if axis is not None:
+            # A 3D axis turns a label longer than 4 characters to its angle at every draw, over
+            # any rotation set (`rotation: 0` on "depth" was drawn at 87.4°).
+            axis.set_rotate_label(False)
         {"text": artist.set_text, "fontsize": artist.set_fontsize, "fontweight": artist.set_fontweight,
          "fontstyle": artist.set_fontstyle, "fontfamily": artist.set_fontfamily, "color": artist.set_color,
          "alpha": artist.set_alpha, "visible": artist.set_visible, "rotation": artist.set_rotation}[key](value)
@@ -142,7 +246,12 @@ def _set(artist: Any, kind: str, key: str, value: Any) -> None:
     elif kind == "axes":
         {"facecolor": artist.set_facecolor, "visible": artist.set_visible}[key](value)
     elif kind == "axis":
-        artist.set_visible(value)
+        if key == "visible":
+            artist.set_visible(value)
+        elif key == "tickdir":  # minor ticks too: a figure with inward major and outward minor ticks looks broken
+            artist.set_tick_params(which="both", direction=value)
+        else:
+            artist.set_tick_params(which="major", **{{"ticklength": "length", "tickwidth": "width"}[key]: value})
     elif kind == "spine":
         {"visible": artist.set_visible, "linewidth": artist.set_linewidth, "color": artist.set_edgecolor}[key](value)
     elif kind == "legend":
@@ -227,11 +336,15 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
                 report.detached.append(pattern)
             continue
         good: dict[str, Any] = {}
-        kinds = {table.parts[n].kind for n in names}
+        targets = {(table.parts[n].kind, table.parts[n].role) for n in names}
         for key, value in props.items():
+            if key in P.OFFSETS and not final:
+                # Taken in the final pass, when every part has its role: before the draw, a tick
+                # label with a gid is not known to be one, and its offset got past the refusal.
+                continue
             problems = []
-            for kind in kinds:
-                problems += P.validate(kind, {key: value}, group=group or len(names) > 1)
+            for kind, role in targets:
+                problems += P.validate(kind, {key: value}, group=group or len(names) > 1, role=role)
             if problems:
                 entry = {"part": pattern, "prop": key, "reason": "; ".join(sorted(set(problems)))}
                 if entry not in report.invalid:
@@ -244,16 +357,133 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
                 kind = kind_of(artist) or part.kind
                 base = report.base.setdefault(name, {})
                 current = get_props(artist, kind)
+                # An override stays set after a save, and a second save read it as the script's
+                # value (base 9 pt for a 7 pt label). The script's value is kept with the value
+                # set, and is base again unless the script has set the property since.
+                earlier = artist.__dict__.setdefault("_idofig_base", {})
                 for key, value in good.items():
+                    if key == "rotation" and not final and _axis3d_of(artist) is not None:
+                        # The angle a 3D axis turns its label to is known once drawn (read before,
+                        # base was 0 for a label drawn at 87.4°); set then, it still reaches the layout.
+                        continue
                     if key not in base and key in current:
-                        base[key] = current[key]
+                        was = earlier.get(key)  # (the script's value, the value set) at an earlier save
+                        base[key] = was[0] if was and was[1] == current[key] else current[key]
                     _set(artist, kind, key, value)
+                after = get_props(artist, kind) if good else {}
+                for key in good:
+                    if key in base and key in after:
+                        earlier[key] = (base[key], after[key])
                 if kind in {"line", "patch", "collection"}:
                     _sync_legend(artist, good)
         if pattern not in report.applied:
             report.applied.append(pattern)
         if pattern in report.detached:
             report.detached.remove(pattern)
+
+
+def offsets(table: PartTable) -> list[tuple[Any, float, float]]:
+    """``(artist, dx_mm, dy_mm)`` for every part a style moves (``apply`` recorded them)."""
+    out = []
+    for part in table.parts.values():
+        if part.group:  # its members are listed themselves
+            continue
+        for artist in part.artists:
+            dx, dy = _offsets(artist).values()
+            if dx or dy:
+                out.append((artist, dx, dy))
+    return out
+
+
+def forget_offsets(table: PartTable) -> None:
+    """Drop the offsets ``apply`` recorded, once the save that moved them is written: an entry
+    removed from style.json (or set to 0) before the next save leaves its part where the
+    script draws it."""
+    for part in table.parts.values():
+        for artist in part.artists:
+            for key in P.OFFSETS:
+                vars(artist).pop(f"_idofig_{key}", None)
+
+
+def apply_offsets(fig, moves: list[tuple[Any, float, float]], undo: Undo) -> None:
+    """Move each part by its offset (mm, y down) on a figure a save has just laid out, its
+    layout frozen first: applied before the layout, a constrained layout absorbed the move (a
+    3 pt xlabel nudge shrank the axes instead). A move is a translation evaluated at draw
+    time, in the drawing's own dpi."""
+    _freeze(fig, undo)
+    for artist, dx, dy in moves:
+        dx_in, dy_in = dx / MM_PER_IN, -dy / MM_PER_IN
+        shift = ScaledTranslation(dx_in, dy_in, fig.dpi_scale_trans)
+        if isinstance(artist, Legend):
+            # Its anchor box moves, keeping its `loc`, padding and size: pinned by a corner to a
+            # zero-size box, a mode="expand" legend collapsed to 0 mm, and one measured by the
+            # manifest's renderer came out 0.34 mm lower. The anchor goes back as the attribute
+            # it was: `set_bbox_to_anchor` reads a box in its parent's transform, and a script's
+            # own anchor put back through it drew the legend metres off the panel.
+            anchor = artist.get_bbox_to_anchor().transformed(fig.dpi_scale_trans.inverted())
+            undo.keep(artist, "_bbox_to_anchor")
+            artist.set_bbox_to_anchor(anchor.translated(dx_in, dy_in), transform=fig.dpi_scale_trans)
+        elif isinstance(artist, Annotation):
+            # It resets its transform at every draw: its text coordinates move instead, and its
+            # arrow still ends at `xy`.
+            undo.set(artist, "anncoords", partial(_shifted_coords, artist, artist.anncoords, shift))
+        elif _axis3d_of(artist) is not None:
+            undo.keep(artist, "_transform")
+            undo.method(artist, "draw", partial(_draw_3d_label, artist, shift, artist.draw, {}))
+        else:
+            undo.keep(artist, "_transform", "_transformSet")
+            artist.set_transform(artist.get_transform() + shift)
+
+
+def _freeze(fig, undo: Undo) -> None:
+    """Keep what matplotlib places anew at every draw where the save just placed it, so only a
+    moved part moves: the layout (its engine is turned off); titles (matplotlib lifts one that
+    dips below its axes and lines them up: a title moved 6 mm down came out 1.6 mm down); and
+    every `loc="best"` legend of an axes, one shown with `ax.add_artist` too, as the fixed
+    `loc` best chose (it avoids the axes' texts: it jumped 57 mm when a text moved)."""
+    engine = fig.get_layout_engine()
+    fig.set_layout_engine("none")  # a placeholder that keeps the engine's colorbar layout, so it goes back
+    undo.callback(fig.set_layout_engine, engine if engine is not None else "none")
+    for ax in fig.axes:
+        undo.set(ax, "_autotitlepos", False)  # the positions the save computed, in axes fractions
+        for legend in ax.get_children():
+            if not isinstance(legend, Legend) or legend._loc != 0 or not legend.get_visible():  # 0: "best"
+                continue
+            # The frame the save drew, at the SVG's 72 dpi whatever the figure's (read at a
+            # producer's 300 dpi, a (2, 1) mm move landed (-4.35, 42.2) mm away).
+            frame = legend.legendPatch
+            x0, y0, w, h = (v / 72 for v in (frame.get_x(), frame.get_y(), frame.get_width(), frame.get_height()))
+            box = legend.get_bbox_to_anchor().transformed(fig.dpi_scale_trans.inverted())
+            pad = legend.borderaxespad * legend._fontsize / 72  # as matplotlib pads an anchored legend
+            across = {"left": box.x0 + pad, "center": box.x0 + (box.width - w) / 2, "right": box.x1 - pad - w}
+            up = {"lower": box.y0 + pad, "center": box.y0 + (box.height - h) / 2, "upper": box.y1 - pad - h}
+            side = min(across, key=lambda k: abs(across[k] - x0))
+            height = min(up, key=lambda k: abs(up[k] - y0))
+            undo.keep(legend, "_loc_used_default", "_loc")  # setting `_loc` back clears the first
+            _set(legend, "legend", "loc", "center" if side == height == "center" else f"{height} {side}")
+
+
+def _shifted_coords(artist, coords, shift, renderer):
+    """An annotation's text coordinates, moved (``Annotation.anncoords`` takes a callable)."""
+    return artist._get_xy_transform(renderer, coords) + shift
+
+
+def _axis3d_of(artist):
+    """The 3D axis ``artist`` is the label of, or None."""
+    ax = getattr(artist, "axes", None)
+    if getattr(ax, "name", None) != "3d":
+        return None
+    return next((axis for axis, _ in axis_letters(ax) if artist is axis.label), None)
+
+
+def _draw_3d_label(artist, shift, plain, state: dict, renderer) -> None:
+    """A moved 3D axis label's draw: its axis points the label's transform back at the data
+    before every draw (`Axis3D._update_all_positions`), dropping the move, so it is added
+    here — once for a label drawn on both sides after one reset."""
+    if artist._transform is not state.get("moved"):
+        state["moved"] = artist._transform + shift
+        artist._transform = state["moved"]
+    plain(renderer)
 
 
 def tick_params_from_style(fig, table: PartTable, style: dict) -> None:
@@ -264,7 +494,7 @@ def tick_params_from_style(fig, table: PartTable, style: dict) -> None:
             p = table.axes_names.get(id(ax))
             if p is None:
                 continue
-            for letter in ("x", "y"):
+            for _, letter in axis_letters(ax):
                 if pattern != f"{p}.{letter}tick.*":
                     continue
                 kw = {}

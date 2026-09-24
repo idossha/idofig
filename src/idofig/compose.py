@@ -32,6 +32,7 @@ from . import spec as S
 from .fsutil import write_atomic
 from .mplsetup import SVG_FONT_STACK
 from .project import Project
+from .props import css_color
 from .units import PT_PER_MM, fmt
 
 _DECL = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.S)
@@ -231,6 +232,7 @@ def _style(a: dict, journal: dict) -> dict:
     s = {"color": "#000000", "width_pt": 0.75, "size_pt": _text_size(journal), "weight": "normal",
          "fill": "none", "gap_mm": 0.8, "leg_mm": 1.0}
     s.update(a.get("style", {}))
+    s["color"], s["fill"] = css_color(s["color"]), css_color(s["fill"])
     return s
 
 
@@ -317,6 +319,15 @@ def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str |
     return None, f"unknown annotation type {t!r}"
 
 
+def _outside_figure(what: str, x: float, y: float, w: float, h: float, width_mm: float,
+                    height_mm: float) -> list[str]:
+    """One warning per figure edge a box (mm) crosses by more than 0.01 mm, with the overhang:
+    what is past the edge is cut off in print."""
+    over = {"left": -x, "top": -y, "right": x + w - width_mm, "bottom": y + h - height_mm}
+    return [f"{what} extends {fmt(mm, 2)} mm past the figure's {edge} edge"
+            for edge, mm in over.items() if mm > 0.01]
+
+
 def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeResult:
     t0 = time.perf_counter()
     doc = S.load_figure(project.figure_json(figure_id))
@@ -325,6 +336,11 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
     letters = J.letter_style(journal, doc.get("letters"))
     out_path = project.figure_dir(figure_id) / "figure.svg"
     warnings: list[str] = []
+    if doc["schema"] < S.figure_schema(doc):
+        # Written by hand (or by a 0.3 development build): 0.2.x reads it too, and composed such
+        # letters at the figure-wide place, in black, calling figure.svg fresh.
+        warnings.append('figure.json uses letter_offset_mm or letters.color under "schema": 2, which an '
+                        'idofig older than 0.3 reads and draws without them: set "schema": 3')
     missing: list[str] = []
     manifests: dict[str, dict] = {}
     body: list[str] = []
@@ -340,8 +356,8 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
         pid = pn["id"]
         place = pn["place"]
         x, y = place["x"] * PT_PER_MM, place["y"] * PT_PER_MM
-        if place["x"] + place["w"] > width_mm + 0.01:
-            warnings.append(f"panel {pid!r} extends past the figure's {fmt(width_mm)} mm width")
+        warnings += _outside_figure(f"panel {pid!r}", place["x"], place["y"], place["w"], place["h"],
+                                    width_mm, height_mm)
         if "image" in pn:
             src = (project.root / pn["image"]).resolve()
             if not src.is_file() or project.root not in src.parents:
@@ -381,17 +397,25 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
 
     if letters.get("show", True):
         size = float(letters["size_pt"])
+        font = _font(size, letters.get("weight", "bold"), css_color(letters["color"]))
         ox, oy = (v * PT_PER_MM for v in letters.get("offset_mm", [0, 0]))
         for pn in panels:
             letter = pn.get("letter")
             if not letter:
                 continue
             text = J.format_letter(letter, letters)
-            lx = pn["place"]["x"] * PT_PER_MM + ox
-            ly = pn["place"]["y"] * PT_PER_MM + oy + size * 0.74
+            # The figure-wide rule places every letter; a panel's own offset moves just its
+            # letter from there (panels at different heights, a letter clearing an axis label).
+            px, py = (v * PT_PER_MM for v in pn.get("letter_offset_mm", (0, 0)))
+            lx = pn["place"]["x"] * PT_PER_MM + ox + px
+            ly = pn["place"]["y"] * PT_PER_MM + oy + py + size * 0.74
+            # Its top-left corner: a letter moved off the figure is missing from print, and a
+            # canvas cannot show it to drag it back.
+            warnings += _outside_figure(f"the letter of panel {pn['id']!r}", lx / PT_PER_MM,
+                                        (ly - size * 0.74) / PT_PER_MM, 0, 0, width_mm, height_mm)
             body.append(
                 f'<text id="{pn["id"]}.letter" data-idofig-role="letter" x="{fmt(lx)}" y="{fmt(ly)}" '
-                f'style="{_font(size, letters.get("weight", "bold"), "#000000")}">{escape(text)}</text>'
+                f'style="{font}">{escape(text)}</text>'
             )
 
     anchors = _Anchors(doc, manifests)

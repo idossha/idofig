@@ -41,9 +41,35 @@ from .compose import compose
 from .errors import IdofigError
 from .fsutil import dump_json, read_json, rel, sha256_file, sha256_json, write_atomic, write_json
 from .project import Project
+from .units import PT_PER_MM
 
 Event = Callable[[dict], None]
 LOCK_SCHEMA = 1
+# How idofig draws a panel, as a number: bump it in a release that changes the bytes of a panel
+# whose producer, inputs, size and style did not (2, 0.3.0: named rasterized parts grouped, a 3D
+# z axis named, gid'd backgrounds marked with their role, no box for what is never drawn, boxes
+# for collections, text boxes in the SVG's metrics, tick values). Without it 0.2.2's panels read
+# fresh while `check` failed them. The lock records per panel `render`, from the manifest of the idofig that drew it (a producer's
+# `run` may name an interpreter with its own), and `builder_render`, the builder's. Drawn under
+# another number, a panel is stale only while its builder's differs too; otherwise the producer's
+# own idofig drew it, and a rebuild changes nothing (stale, it was rebuilt forever): a warning.
+RENDER = 2
+
+
+def drawn_under(manifest: dict) -> int:
+    """The render number of the idofig that wrote ``manifest`` (1: idofig 0.2.x), or that
+    drew a lock's panel entry."""
+    render = manifest.get("render", 1)
+    return render if isinstance(render, int) and not isinstance(render, bool) else 1
+
+
+def _drawn_by(entry: dict) -> str:
+    """The idofig that drew a lock's panel entry, as a reason names it (an entry with no version
+    was written by 0.2.x, or its producer's idofig recorded none)."""
+    if entry.get("idofig"):
+        return f"idofig {entry['idofig']}"
+    drawn = drawn_under(entry)
+    return "idofig 0.2.x" if drawn == 1 else f"{'an older' if drawn < RENDER else 'a newer'} idofig"
 
 
 # ----------------------------------------------------------------------------- lock
@@ -253,6 +279,7 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
         pr = S.producer_of(doc, pid)
         ps = PanelStatus(pid, "fresh", producer=pr["id"] if pr else None,
                          cost=pr.get("cost", "cheap") if pr else None)
+        render_note = None
         pdir = project.panel_dir(fid, pid)
         svg_sha = sha256_file(pdir / "panel.svg")
         entry = lock["panels"].get(pid)
@@ -294,6 +321,24 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
                 if svg_sha != entry.get("svg"):
                     ps.state = "stale"
                     ps.reasons.append("panel.svg was changed outside idofig")
+                drawn = drawn_under(entry)  # a lock without one was written by 0.2.x
+                if drawn != RENDER:
+                    who = _drawn_by(entry)
+                    if entry.get("builder_render", drawn) != RENDER:  # see RENDER
+                        ps.state = "stale"
+                        ps.reasons.append(f"drawn by {who}; idofig {__version__} may draw it differently")
+                    else:
+                        # After that idofig is upgraded the panel still reads fresh (the lock
+                        # cannot see it), so the step names the forced build that redraws it. 0.2.x
+                        # (render 1) reads figure.json in the producer too (`idofig.panels()`) and
+                        # refuses a 3: once a letter was moved, every rebuild failed with a bare
+                        # "schema must be 2" that named no cause.
+                        what = ("cannot read this figure.json (schema 3: a letter offset or colour), so its "
+                                "next build fails" if drawn == 1 and doc["schema"] == 3
+                                else f"draws panels differently from idofig {__version__}")
+                        render_note = (f"drawn by {who}, the one its producer's run uses, which {what}: "
+                                       + (f"upgrade idofig where the producer runs, then `idofig build --force {fid}`"
+                                          if drawn < RENDER else "upgrade the idofig that builds"))
             if ps.error is not None:
                 if ps.state == "fresh":
                     ps.error = None  # the inputs went back to what the published panel was built from
@@ -306,6 +351,8 @@ def figure_status(project: Project, fid: str) -> FigureStatus:
             ps.warnings = list(man.get("warnings", []))
         except (FileNotFoundError, ValueError):
             pass
+        if render_note:
+            ps.warnings.append(render_note)
         st.panels.append(ps)
 
     try:
@@ -466,6 +513,10 @@ def _record_build(project: Project, fid: str, doc: dict, producer: dict, panels:
     for pid in panels:
         pdir = project.panel_dir(fid, pid)
         own = before["own"][pid] if before else _panel_own(project, fid, doc, pid)
+        try:  # just written, by the producer's own idofig maybe: 0.2.2 wrote a NaN into some
+            drawn = drawn_under(read_json(pdir / "manifest.json"))
+        except ValueError:
+            drawn = 1
         lock["panels"][pid] = {
             "producer": producer["id"],
             "shared": shared,
@@ -473,6 +524,13 @@ def _record_build(project: Project, fid: str, doc: dict, producer: dict, panels:
             "style": own["style"],
             "svg": sha256_file(pdir / "panel.svg"),
             "manifest": sha256_file(pdir / "manifest.json"),
+            # What drew it and what built it (see RENDER): recorded as the builder's, the 0.2.2
+            # panels of a producer whose run names a venv with idofig 0.2.2 showed fresh. Per panel,
+            # as `render` is: read from the producer's `built_with`, which a build of some of its
+            # panels (`only`) rewrites, the others' reason named the new idofig as what drew them.
+            "render": drawn,
+            "builder_render": RENDER,
+            "idofig": versions.get("idofig"),
         }
     known = {p["id"] for p in doc.get("panels", [])}
     for pid in list(lock["panels"]):
@@ -618,7 +676,15 @@ class CheckReport:
         return {"ok": self.ok, "errors": self.errors, "warnings": self.warnings}
 
 
+# Kinds whose box is the ink a reader sees. A data mark is clipped to its axes but boxed
+# unclipped (every zoomed plot would be flagged for data nobody sees), so it is not checked.
+_INK_KINDS = {"text", "legend", "axes"}
+_INK_TOLERANCE_MM = 0.2  # a spine's half-width at the panel edge is ~0.1 mm and is not a finding
+
+
 def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[str]]:
+    """The journal's figure rules on what was drawn, and ink drawn outside its panel's box.
+    Findings name ``<figure>/<panel>: <part> is …`` so an editor can select the part."""
     errors: list[str] = []
     warnings: list[str] = []
     journal = J.load(doc.get("journal") or project.journal, str(project.root))
@@ -633,23 +699,82 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
     max_h = journal.get("maxHeightMm")
     if max_h and doc.get("height") and doc["height"]["mm"] > max_h:
         errors.append(f"{fid}: height {doc['height']['mm']:g} mm exceeds {jname}'s {max_h:g} mm")
+    # Letters are figure text, held to the journal's floor but not its ceiling: no preset states a
+    # label size, and labels are set larger than the text they label (8 pt over Nature's 7; D4).
+    letters = J.letter_style(journal, doc.get("letters"))
+    size = float(letters["size_pt"])  # validated: a positive number
+    if (letters.get("show", True) and lo is not None and size < lo - 1e-6
+            and any(pn.get("letter") for pn in doc.get("panels", []))):
+        warnings.append(f"{fid}: panel letters are {size:g} pt; {jname} requires at least {lo:g} pt")
     for pn in doc.get("panels", []):
         try:
             man = read_json(project.panel_dir(fid, pn["id"]) / "manifest.json")
         except (FileNotFoundError, ValueError):
             continue
-        for name, part in man.get("parts", {}).items():
-            props = part.get("props") or {}
-            if part.get("kind") == "text" and props.get("visible", True) and props.get("text"):
+        w_pt, h_pt = (man.get("size") or {}).get("w_pt"), (man.get("size") or {}).get("h_pt")
+        # Boxes another render measured are not checked for ink: 0.2.x boxed parts it never drew
+        # and a set_dpi(300) panel at 300/72 its size (18 false findings on one project).
+        current = drawn_under(man) == RENDER
+        parts = man.get("parts", {})
+        # One finding per rule for a group's members (an axis' tick labels, a series' bars),
+        # naming the group, which an editor selects: one per tick label made 20 of a port's 73.
+        # A legend's entries count as its group when the legend is a part (a manifest written
+        # before a figure legend's gid named its entries gives them a parent that is none).
+        group_of = {m: g for g, part in parts.items() if part.get("group") for m in part.get("members", [])}
+        group_of |= {n: part["parent"] for n, part in parts.items()
+                     if part.get("role") == "legend-entry" and part.get("parent") in parts}
+        found: dict[tuple[str, str], list[tuple[str, float]]] = {}  # (rule, part or group) → [(part, value)]
+
+        def breaks(rule: str, name: str, value: float) -> None:
+            found.setdefault((rule, group_of.get(name, name)), []).append((name, value))
+
+        def thin(name: str, w: float | None) -> None:
+            if w is not None and w > 0 and lw.get("min") is not None and w < lw["min"] - 1e-6:
+                breaks("thin", name, w)
+
+        for name, part in parts.items():
+            box, props = part.get("bbox"), part.get("props") or {}
+            if part.get("kind") == "axis":
+                # No box, drawn or not: its major tick marks are its stroke while it is drawn and
+                # they have a length (`tickwidth: 0.1` passed Nature's 0.25 pt; an image axes' under
+                # axis("off") were findings nothing could fix). Its minor ones are not read:
+                # idofig's rc draws them at 0.75 × the major width, its defaults included.
+                if (current and part.get("drawn", True) and props.get("visible")
+                        and (props.get("ticklength") or 0) > 0):
+                    thin(name, props.get("tickwidth"))
+                continue
+            if not box:  # not drawn, so it breaks no rule (a colorbar's dividers were stroke findings)
+                continue
+            if current and part.get("kind") in _INK_KINDS and not part.get("group") and w_pt and h_pt:
+                out = max(-box[0], -box[1], box[2] - w_pt, box[3] - h_pt) / PT_PER_MM
+                if out > _INK_TOLERANCE_MM:
+                    breaks("ink", name, round(out, 2))
+            if part.get("kind") == "text" and props.get("text"):
                 size = props.get("fontsize")
                 if size is not None and lo is not None and size < lo - 1e-6:
-                    errors.append(f"{fid}/{pn['id']}: {name} is {size:g} pt; {jname} requires at least {lo:g} pt")
+                    breaks("small", name, size)
                 if size is not None and hi is not None and size > hi + 1e-6:
-                    warnings.append(f"{fid}/{pn['id']}: {name} is {size:g} pt; {jname} states at most {hi:g} pt")
-            if part.get("kind") in {"line", "spine"} and props.get("visible", True):
-                w = props.get("linewidth")
-                if w is not None and w > 0 and lw.get("min") is not None and w < lw["min"] - 1e-6:
-                    warnings.append(f"{fid}/{pn['id']}: {name} is {w:g} pt wide; {jname} states at least {lw['min']:g} pt")
+                    breaks("large", name, size)
+            # A drawn stroke of any kind thinner than the journal's line weight (a network's
+            # LineCollection at 0.2 pt passed Nature's 0.25 pt). None: a markers-only line, an edge
+            # in no colour (pcolor's default) or in its face colour (a scatter's, which merges into
+            # its fill; an all-stroke '+' reads the colour it is drawn in). A manifest another
+            # render wrote gets 0.2.x's line and spine check: it wrote "#000000" for no colour.
+            if (part.get("kind") in ({"line", "spine", "patch", "collection"} if current else {"line", "spine"})
+                    and props.get("linestyle") not in {"None", "none", "", " "}
+                    and props.get("edgecolor", props.get("color")) not in {"none", "face"}):
+                thin(name, part.get("thinnest_pt", props.get("linewidth")))
+        texts = {"ink": "{v} mm outside its panel's box{n}",
+                 "small": "{v} pt{n}; {j} requires at least {lo:g} pt",
+                 "large": "{v} pt{n}; {j} states at most {hi:g} pt",
+                 "thin": "{v} pt wide{n}; {j} states at least {lw:g} pt"}
+        for (rule, unit), hits in found.items():
+            values = sorted(v for _, v in hits)
+            v = f"{values[0]:g}" if values[0] == values[-1] else f"{values[0]:g}–{values[-1]:g}"
+            n = f" ({len(hits)} parts)" if len(hits) > 1 else ""
+            text = texts[rule].format(v=v, n=n, j=jname, lo=lo, hi=hi, lw=lw.get("min"))
+            (errors if rule == "small" else warnings).append(
+                f"{fid}/{pn['id']}: {unit if len(hits) > 1 else hits[0][0]} is {text}")
     return errors, warnings
 
 
@@ -691,13 +816,27 @@ def check(project: Project, figure_ids: list[str] | None = None, *, run: bool = 
                     if not res.ok:
                         rep.errors.append(f"{fid}/{producer['id']}: rebuild failed: {res.error}")
                         continue
+                    lock = read_lock(project, fid)
                     for pid in producer["panels"]:
                         fresh = (staging / pid / "panel.svg").read_bytes()
                         try:
                             committed = (project.panel_dir(fid, pid) / "panel.svg").read_bytes()
                         except FileNotFoundError:
                             committed = b""
-                        if fresh != committed:
+                        if fresh == committed:
+                            continue
+                        # A producer whose own idofig was upgraded draws under a new render the
+                        # lock cannot see: not irreproducible, but redrawn by a forced build.
+                        entry = lock["panels"].get(pid)
+                        try:  # run_producer checked it is there
+                            now = drawn_under(read_json(staging / pid / "manifest.json"))
+                        except ValueError:
+                            now = None
+                        if entry is not None and now is not None and now != drawn_under(entry):
+                            rep.errors.append(
+                                f"{fid}/{pid}: drawn by {_drawn_by(entry)} (render {drawn_under(entry)}); "
+                                f"its producer now draws with render {now} — `idofig build --force {fid}` redraws it")
+                        else:
                             rep.errors.append(f"{fid}/{pid}: not reproducible — a fresh build differs from the "
                                               "committed panel.svg")
                 finally:

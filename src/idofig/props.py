@@ -10,14 +10,15 @@ A part's *kind* is recorded in its panel manifest:
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Callable
 
 from ._colornames import NAMES as COLOR_NAMES
 
-_HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
-_CYCLE = re.compile(r"^C[0-9]$")
-_GRAY = re.compile(r"^(?:0(?:\.\d+)?|1(?:\.0+)?)$")
+_HEX = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+_CYCLE = re.compile(r"C[0-9]")
+_GRAY = re.compile(r"0(?:\.\d+)?|1(?:\.0+)?")
 
 LINESTYLES = {"-", "--", ":", "-.", "solid", "dashed", "dotted", "dashdot", "none", "None", ""}
 MARKERS = {"", " ", "*", "+", ",", ".", "1", "2", "3", "4", "8", "<", ">", "D", "H", "None", "P", "X",
@@ -30,12 +31,36 @@ LEGEND_LOCS = {"best", "upper right", "upper left", "lower left", "lower right",
 
 
 def is_color(value: Any) -> bool:
+    """Whether matplotlib takes ``value`` as a colour, read as it reads one: a one-letter name in
+    lower case only, a longer one in any case, nothing around it (fullmatch: a `$` let "#fff\\n"
+    through). Stripped and lower-cased, 'K' and ' red ' passed, and `set_color` raised at the draw."""
     if not isinstance(value, str):
         return False
-    v = value.strip()
     return bool(
-        v.lower() == "none" or _HEX.match(v) or _CYCLE.match(v) or _GRAY.match(v) or v.lower() in COLOR_NAMES
+        value.lower() == "none" or _HEX.fullmatch(value) or _CYCLE.fullmatch(value) or _GRAY.fullmatch(value)
+        or (value if len(value) == 1 else value.lower()) in COLOR_NAMES
     )
+
+
+# The spellings only matplotlib knows, as the hex they stand for, so figure.svg holds colours CSS
+# knows: every SVG renderer drops `fill: C1` or `fill: 0.5`, and a letter came out black. C0–C9
+# are matplotlib's default cycle (compose never imports matplotlib to read a project's own).
+_TAB10 = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22",
+          "#17becf")
+_MATPLOTLIB_ONLY = {
+    "b": "#0000ff", "g": "#008000", "r": "#ff0000", "c": "#00bfbf", "m": "#bf00bf", "y": "#bfbf00", "k": "#000000",
+    "w": "#ffffff",
+    **{f"tab:{n}": h for n, h in zip(("blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "olive",
+                                      "cyan"), _TAB10)},
+    **{f"C{i}": h for i, h in enumerate(_TAB10)},
+}
+
+
+def css_color(value: str) -> str:
+    """A colour :func:`is_color` accepts, as CSS writes it."""
+    if _GRAY.fullmatch(value):
+        return "#" + format(round(float(value) * 255), "02x") * 3  # as matplotlib's to_hex rounds
+    return _MATPLOTLIB_ONLY.get(value) or _MATPLOTLIB_ONLY.get(value.lower()) or value  # "Tab:Blue" too
 
 
 Check = Callable[[Any], "str | None"]
@@ -47,10 +72,24 @@ def _described(check: Check, **spec: Any) -> Check:
     return check
 
 
+def is_finite_number(v: Any) -> bool:
+    """A number matplotlib can take: a finite float, or an int small enough to be one. NaN passes
+    every bound (`dx_mm: NaN` was listed applied and emptied its part from the SVG), and a
+    310-digit int raised OverflowError out of the check, failing the whole producer."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    try:
+        return math.isfinite(v)
+    except OverflowError:
+        return False
+
+
 def _num(lo: float | None = None, hi: float | None = None, unit: str | None = None) -> Check:
     def check(v: Any) -> str | None:
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             return "must be a number"
+        if not is_finite_number(v):
+            return "must be a finite number"
         if lo is not None and v < lo:
             return f"must be ≥ {lo}"
         if hi is not None and v > hi:
@@ -99,11 +138,18 @@ _cmap = _described(_cmap_check, type="text")
 _ALPHA = _num(0, 1)
 _WIDTH = _num(0, 100, "pt")
 _SIZE = _num(0.1, 500, "pt")
+_OFFSET = _num(-100, 100, "mm")
+
+# A part's move from where the script drew it, in mm with y down. Applied after the layout
+# is frozen (``styling.apply_offsets``), so the part lands exactly that far away.
+OFFSETS = ("dx_mm", "dy_mm")
+TICK_MARKS = ("tickdir", "ticklength", "tickwidth")
 
 PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     "text": {
         "text": _str, "fontsize": _SIZE, "fontweight": _weight, "fontstyle": _enum(FONTSTYLES),
         "fontfamily": _str, "color": _color, "alpha": _ALPHA, "visible": _bool, "rotation": _num(-360, 360),
+        "dx_mm": _OFFSET, "dy_mm": _OFFSET,
     },
     "line": {
         "color": _color, "linewidth": _WIDTH, "linestyle": _enum(LINESTYLES), "alpha": _ALPHA, "visible": _bool,
@@ -119,15 +165,29 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     },
     "image": {"alpha": _ALPHA, "visible": _bool, "cmap": _cmap, "vmin": _num(), "vmax": _num()},
     "axes": {"facecolor": _color, "visible": _bool},
-    "axis": {"visible": _bool},
+    "axis": {"visible": _bool, "tickdir": _enum({"in", "out", "inout"}), "ticklength": _WIDTH, "tickwidth": _WIDTH},
     "spine": {"visible": _bool, "linewidth": _WIDTH, "color": _color},
     "legend": {
         "visible": _bool, "loc": _enum(LEGEND_LOCS), "frameon": _bool, "fontsize": _SIZE, "title": _str,
+        "dx_mm": _OFFSET, "dy_mm": _OFFSET,
     },
 }
 
 # Properties that only make sense on one artist, never on a group or a wildcard.
 SINGLE_ONLY = {"text", "title"}
+
+# Properties refused on parts of a role, with the reason: accepted, they were listed applied and
+# drew nothing, or elsewhere. matplotlib copies a tick label's transform onto the ticks it makes
+# later, so one label's offset spreads; a moved legend entry left its key behind and crossed the
+# frame (the legend moves as one); a 3D axis draws its tick marks from its own settings, never
+# from tick_params (`ticklength: 8` left panel.svg unchanged).
+_MOVE_TICK = dict.fromkeys(OFFSETS, "a tick label cannot be moved: matplotlib copies its transform to new ticks")
+_MOVE_ENTRY = dict.fromkeys(OFFSETS, "move the legend instead: alone, its entries and title would leave their keys "
+                                     "and frame behind")
+REFUSED_BY_ROLE = {
+    "tick": _MOVE_TICK, "ticks": _MOVE_TICK, "legend-entry": _MOVE_ENTRY, "legend-title": _MOVE_ENTRY,
+    "axis3d": dict.fromkeys(TICK_MARKS, "a 3D axis draws its tick marks from its own settings, not from tick_params"),
+}
 
 
 def allowed(kind: str) -> list[str]:
@@ -135,19 +195,23 @@ def allowed(kind: str) -> list[str]:
 
 
 def describe() -> dict:
-    """The property table as JSON: ``{kinds: {kind: {prop: {type, min?, max?, unit?, options?}}}, single_only}``."""
+    """The property table as JSON: ``{kinds: {kind: {prop: {type, min?, max?, unit?, options?}}},
+    single_only, refused_by_role: {role: [prop…]}}``."""
     return {
         "kinds": {kind: {prop: dict(check.spec) for prop, check in table.items()}  # type: ignore[attr-defined]
                   for kind, table in PROPS.items()},
         "single_only": sorted(SINGLE_ONLY),
+        "refused_by_role": {role: sorted(props) for role, props in REFUSED_BY_ROLE.items()},
     }
 
 
-def validate(kind: str, props: dict, *, group: bool = False) -> list[str]:
-    """Problems with setting ``props`` on a part of ``kind`` (empty list: valid)."""
+def validate(kind: str, props: dict, *, group: bool = False, role: str | None = None) -> list[str]:
+    """Problems with setting ``props`` on a part of ``kind`` (and ``role``, as the manifest
+    records it) — an empty list means valid."""
     table = PROPS.get(kind)
     if table is None:
         return [f"parts of kind {kind!r} cannot be styled"]
+    refused = REFUSED_BY_ROLE.get(role, {})
     problems = []
     for key, value in props.items():
         check = table.get(key)
@@ -156,6 +220,9 @@ def validate(kind: str, props: dict, *, group: bool = False) -> list[str]:
             continue
         if group and key in SINGLE_ONLY:
             problems.append(f"{key!r} can only be set on a single part, not a group")
+            continue
+        if key in refused:
+            problems.append(f"{key}: {refused[key]}")
             continue
         msg = check(value)
         if msg:

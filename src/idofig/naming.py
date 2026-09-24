@@ -21,7 +21,16 @@ colorbar (``idofig.colorbar``)        ``cbar.<name>`` (its axes), ``cbar.<name>.
 unlabelled artists                    ``main.line0``, ``main.patch3`` …                 positional
 ====================================  ==============================================  ============
 
-An author ``gid`` always wins. Two author gids that collide are an error; derived names
+A 3D axes' z axis is named like x and y: ``main.zlabel``, ``main.zaxis``, ``main.ztick.<text>``;
+its axes have the role ``axis3d``.
+Free text is named by its axes and its text (``fig.text`` by its text alone), so a script that
+draws its own tick labels with ``ax.text("5")`` more than once in one axes (or with
+``fig.text`` on the figure) gets the same name twice; the second is ``….2`` (positional) and
+reported — name such labels with a ``gid`` to address them. The same text in two axes is two
+names.
+
+An author ``gid`` always wins, as the name; the part's role is still what it is (a tick
+label with a gid has the role ``tick``). Two author gids that collide are an error; derived names
 that collide become positional (``…​.2``) and are reported, never silently merged.
 """
 
@@ -114,8 +123,15 @@ class PartTable:
     def add(self, name: str, artist: Any, role: str, stability: str, parent: str | None = None,
             *, kind: str | None = None, author: bool = False) -> str | None:
         kind = kind or kind_of(artist)
-        if kind is None or self.claimed(artist):
+        if kind is None:
             return self.by_artist.get(id(artist))
+        if self.claimed(artist):
+            claimed = self.parts[self.by_artist[id(artist)]]
+            # A gid names the part; its role is still what the part is: left "author", a gid'd
+            # tick label took an offset its role refuses (props.REFUSED_BY_ROLE).
+            if claimed.role == "author":
+                claimed.role = role
+            return claimed.name
         if name in self.parts:
             if author:
                 raise NameCollisionError(f"two parts both have the gid {name!r}; gids must be unique in a panel")
@@ -154,6 +170,16 @@ def _label(artist: Any) -> str | None:
 
 def _is_colorbar_axes(ax: Axes) -> bool:
     return getattr(ax, "_colorbar", None) is not None
+
+
+def axis_letters(ax: Axes) -> list[tuple[Axis, str]]:
+    """An axes' axes with their letters; a 3D axes has a z axis, named like the other two
+    (it was left out, so a 3D plot's z label and z ticks could not be addressed at all)."""
+    out = [(ax.xaxis, "x"), (ax.yaxis, "y")]
+    zaxis = getattr(ax, "zaxis", None)
+    if zaxis is not None:
+        out.append((zaxis, "z"))
+    return out
 
 
 def assign_structural(fig: Figure) -> PartTable:
@@ -210,7 +236,9 @@ def assign_structural(fig: Figure) -> PartTable:
 
 
 def _name_legend(t: PartTable, legend: Legend, name: str, parent: str | None) -> None:
-    t.add(name, legend, "legend", "semantic", parent)
+    # Its frame, entries and title are named after the legend's name, its gid included: named
+    # after "legend", a figure legend "key"'s entries had a parent that is no part.
+    name = t.add(name, legend, "legend", "semantic", parent) or name
     frame = legend.get_frame()
     if frame is not None:
         t.add(f"{name}.frame", frame, "legend-frame", "semantic", name)
@@ -241,10 +269,13 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
                          (getattr(ax, "_right_title", None), "title-right")):
         if text is not None and text.get_text():
             t.add(f"{p}.{suffix}", text, "title", "semantic", p)
-    for axis, letter in ((ax.xaxis, "x"), (ax.yaxis, "y")):
+    # A 3D axis is its own role: it draws its tick marks from its own settings, so the tick
+    # properties an axis takes are refused on it (props.REFUSED_BY_ROLE).
+    axis_role = "axis3d" if getattr(ax, "name", None) == "3d" else "axis"
+    for axis, letter in axis_letters(ax):
         if axis.label.get_text():
             t.add(f"{p}.{letter}label", axis.label, f"{letter}label", "semantic", p)
-        t.add(f"{p}.{letter}axis", axis, "axis", "semantic", p, kind="axis")
+        t.add(f"{p}.{letter}axis", axis, axis_role, "semantic", p, kind="axis")
     for side, spine in ax.spines.items():
         t.add(f"{p}.spine.{slug(side)}", spine, "spine", "semantic", p)
 
@@ -316,7 +347,7 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
         if text.get_text() and not t.claimed(text):
             t.add(f"{p}.text.{slug(text.get_text())}", text, "text", "semantic", p)
     legend = ax.get_legend()
-    if legend is not None and not t.claimed(legend):
+    if legend is not None:  # with a gid too: skipped, it kept the role "author" and its entries no name
         _name_legend(t, legend, f"{p}.legend", p)
 
 
@@ -344,13 +375,16 @@ def assign_ticks(fig: Figure, t: PartTable) -> None:
         p = t.axes_names.get(id(ax))
         if p is None:
             continue
-        for axis, letter in ((ax.xaxis, "x"), (ax.yaxis, "y")):
+        for axis, letter in axis_letters(ax):
             names: list[str] = []
             for tick in _drawn_ticks(axis):
                 for label, suffix in ((tick.label1, "tick"), (tick.label2, "tick2")):
-                    if label.get_visible() and label.get_text() and not t.claimed(label):
+                    if label.get_visible() and label.get_text():
+                        # A tick label with an author gid keeps its name, outside the group,
+                        # and `add` records that it is a tick label.
+                        mine = not t.claimed(label)
                         n = t.add(f"{p}.{letter}{suffix}.{tick_slug(label.get_text())}", label, "tick", "semantic", p)
-                        if n:
+                        if n and mine:
                             names.append(n)
             if names:
                 # Both sides: a colorbar draws only label2 (`ytick2.*`), and "all the y tick

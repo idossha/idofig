@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -36,10 +37,13 @@ def test_rebuild_is_byte_identical(project):
 
 
 def test_direct_run_equals_build(project):
+    """A direct run sets no MPLBACKEND (`build` sets Agg); on a Mac matplotlib then picked
+    the macosx canvas, whose Retina dpi changed the layout, until idofig.panels() chose Agg."""
     build(project)
     d = project.figure_dir("fig-1")
     before = {p: p.read_bytes() for p in d.rglob("*") if p.is_file()}
-    subprocess.run([sys.executable, "figures/fig-1/make.py"], cwd=project.root, check=True)
+    env = {k: v for k, v in os.environ.items() if k != "MPLBACKEND"}
+    subprocess.run([sys.executable, "figures/fig-1/make.py"], cwd=project.root, check=True, env=env)
     after = {p: p.read_bytes() for p in d.rglob("*") if p.is_file()}
     assert before == after
 
