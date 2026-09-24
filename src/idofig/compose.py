@@ -16,10 +16,13 @@ Output structure (stable ids, so a canvas can address everything)::
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import math
 import re
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
@@ -100,6 +103,36 @@ def namespace_ids(inner: str, prefix: str) -> str:
     inner = re.sub(r'((?:xlink:)?href="#)([^"]+)(")', ref_sub, inner)
     inner = inner.replace("*{stroke-linejoin", f"#{prefix} *{{stroke-linejoin")
     return inner
+
+
+# A panel's namespaced markup, by the sha256 of its panel.svg bytes and the prefix.
+#
+# ``namespace_ids`` is a handful of regex passes over the whole panel, and a panel
+# holding a rasterised layer is hundreds of kB of base64 — 90 % of ``status`` (which
+# composes every figure to say whether figure.svg is fresh) went there, and a server
+# answers ``status`` after every edit and every file change: 270 ms for a ten-figure
+# project, during which every other request waits. Keyed by the bytes' own digest, a hit
+# is always the markup those exact bytes produce; a changed file is a new key.
+_PANEL_CACHE: "OrderedDict[tuple[str, str], tuple[str, str]]" = OrderedDict()
+_PANEL_CACHE_MAX = 256
+_PANEL_CACHE_LOCK = threading.Lock()
+
+
+def _namespaced(raw: bytes, prefix: str) -> tuple[str, str]:
+    """(root attributes, namespaced inner markup) of panel SVG bytes; cached by content."""
+    key = (hashlib.sha256(raw).hexdigest(), prefix)
+    with _PANEL_CACHE_LOCK:
+        hit = _PANEL_CACHE.get(key)
+        if hit is not None:
+            _PANEL_CACHE.move_to_end(key)
+            return hit
+    attrs, inner = split_svg(raw.decode("utf-8"))
+    value = (attrs, namespace_ids(inner, prefix))
+    with _PANEL_CACHE_LOCK:
+        _PANEL_CACHE[key] = value
+        while len(_PANEL_CACHE) > _PANEL_CACHE_MAX:
+            _PANEL_CACHE.popitem(last=False)
+    return value
 
 
 def _svg_size_pt(attrs: str) -> tuple[float, float] | None:
@@ -318,9 +351,12 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
             body.append(_image_panel(pid, src, x, y, place))
             continue
         pdir = project.panel_dir(figure_id, pid)
-        svg = _read(pdir / "panel.svg")
+        try:
+            raw = (pdir / "panel.svg").read_bytes()
+        except FileNotFoundError:
+            raw = None
         man = _read(pdir / "manifest.json")
-        if svg is None:
+        if raw is None:
             missing.append(pid)
             continue
         if man is not None:
@@ -328,7 +364,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
                 manifests[pid] = json.loads(man)
             except ValueError:
                 warnings.append(f"panel {pid!r}: manifest.json is not valid JSON")
-        attrs, inner = split_svg(svg)
+        attrs, inner = _namespaced(raw, pid)
         size = _svg_size_pt(attrs)
         if size is not None:
             dw = abs(size[0] - place["w"] * PT_PER_MM) / PT_PER_MM
@@ -340,7 +376,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
                 )
         body.append(
             f'<g id="{pid}" data-idofig-panel="{pid}" transform="translate({fmt(x)} {fmt(y)})">'
-            f"{namespace_ids(inner, pid)}</g>"
+            f"{inner}</g>"
         )
 
     if letters.get("show", True):
@@ -394,7 +430,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
 def _image_panel(pid: str, src: Path, x: float, y: float, place: dict) -> str:
     w, h = place["w"] * PT_PER_MM, place["h"] * PT_PER_MM
     if src.suffix.lower() == ".svg":
-        attrs, inner = split_svg(src.read_text(encoding="utf-8"))
+        attrs, inner = _namespaced(src.read_bytes(), pid)
         vb = _viewbox(attrs)
         size = _svg_size_pt(attrs)
         if vb is None and size is not None:
@@ -405,7 +441,7 @@ def _image_panel(pid: str, src: Path, x: float, y: float, place: dict) -> str:
         tx = x - vb[0] * s + (w - vb[2] * s) / 2
         ty = y - vb[1] * s + (h - vb[3] * s) / 2
         return (f'<g id="{pid}" data-idofig-panel="{pid}" data-idofig-image="svg" '
-                f'transform="translate({fmt(tx)} {fmt(ty)}) scale({fmt(s, 6)})">{namespace_ids(inner, pid)}</g>')
+                f'transform="translate({fmt(tx)} {fmt(ty)}) scale({fmt(s, 6)})">{inner}</g>')
     mime = MIME.get(src.suffix.lower(), "application/octet-stream")
     data = base64.b64encode(src.read_bytes()).decode("ascii")
     return (f'<image id="{pid}" data-idofig-panel="{pid}" data-idofig-image="raster" x="{fmt(x)}" y="{fmt(y)}" '

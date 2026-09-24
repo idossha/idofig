@@ -208,3 +208,36 @@ def test_an_image_panel_is_placed_at_its_own_aspect(project):
         assert "outside the project" in str(exc)
     else:
         raise AssertionError("an image outside the project must be refused")
+
+
+def test_compose_reuses_a_panels_namespaced_markup_until_its_bytes_change(project, monkeypatch):
+    """``status`` composes every figure, so the per-panel regex work is cached — by the
+    panel's own bytes, never by a timestamp: a same-size rewrite in the same mtime tick
+    must still show."""
+    import os
+
+    from idofig import compose as C
+
+    build(project)
+    calls = []
+    real = C.namespace_ids
+    monkeypatch.setattr(C, "namespace_ids", lambda inner, prefix: calls.append(prefix) or real(inner, prefix))
+    C._PANEL_CACHE.clear()
+    first = compose(project, "fig-1", write=False).svg
+    assert sorted(calls) == ["a", "b"]
+    assert compose(project, "fig-1", write=False).svg == first
+    assert status(project)[0].figure_svg == "fresh"
+    assert sorted(calls) == ["a", "b"], "an unchanged panel is not namespaced again"
+
+    panel = project.panel_dir("fig-1", "a") / "panel.svg"
+    before = panel.read_bytes()
+    st = os.stat(panel)
+    after = before.replace(b"condition", b"CONDITION")
+    assert len(after) == len(before) and after != before
+    panel.write_bytes(after)
+    os.utime(panel, ns=(st.st_atime_ns, st.st_mtime_ns))
+    changed = compose(project, "fig-1", write=False).svg
+    assert ">CONDITION</text>" in changed and changed != first
+    assert sorted(calls) == ["a", "a", "b"]
+    # the same bytes under another panel id are namespaced for that id, not served from a's entry
+    assert C._namespaced(after, "z")[1] != C._namespaced(after, "a")[1]
