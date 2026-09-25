@@ -139,7 +139,7 @@ Every refinement is a small named delta that survives the script being re-run:
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
 | the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |
 | a panel's empty margin | `style.json` `trim: true` or `trim_mm` | mm |
-| the figure's height | leave `height` out: it fits what is drawn (`fit_margin_mm`) | mm |
+| the figure's size | nothing: it always fits what is drawn (`fit_margin_mm`); `width` and `height` are maxima | mm |
 
 `dx_mm`/`dy_mm` move a part after the layout is frozen, so it lands exactly that far from
 where the script drew it and nothing else moves; the freeze lasts that one save, so a

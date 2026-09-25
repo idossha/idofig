@@ -1184,31 +1184,62 @@ def test_a_script_run_draws_on_agg_whatever_a_matplotlibrc_names(project, tmp_pa
 # ----------------------------------------------------------------------------- checks (I6)
 
 
-def test_a_panel_past_the_figures_edge_is_reported_with_the_overhang(project):
-    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "b", "w": 96},
-                                                   {"op": "height", "mm": 50}])
-    warnings = compose(project, "fig-1", write=False).warnings
-    assert "panel 'b' extends 5 mm past the figure's right edge" in warnings  # 92 + 96 − 183
-    assert "panel 'a' extends 10 mm past the figure's bottom edge" in warnings  # 60 − 50
-    assert "panel 'a' extends 10 mm past the figure's bottom edge" in figure_status(project, "fig-1").warnings
-    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "a", "x": -2, "y": -3}])
-    warnings = compose(project, "fig-1", write=False).warnings
-    assert "panel 'a' extends 2 mm past the figure's left edge" in warnings
-    assert "panel 'a' extends 3 mm past the figure's top edge" in warnings
+def test_a_figure_always_fits_what_it_draws_and_its_column_and_height_are_maxima(project):
+    """idofig 0.5.0 (user decision 2026-09-24): the figure is as large as its content, both
+    ways; the column and a stated height are caps, reported when exceeded, never rescaled.
+    Numbers: conftest's panels (a at x 0, b at x 92, 88 × 60 mm) and Nature's 183 mm double."""
+    res = compose(project, "fig-1", write=False)
+    assert (res.left_mm, res.top_mm, res.width_mm, res.height_mm) == (0, 0, 92 + 88, 60)
+    assert not res.warnings
+    # A right panel moved left: the figure narrows. A bottom band emptied: it gets shorter.
+    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "b", "x": 80, "h": 40}])
+    res = compose(project, "fig-1", write=False)
+    assert (res.width_mm, res.height_mm) == (80 + 88, 60)
+    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "a", "h": 30}])
+    assert compose(project, "fig-1", write=False).height_mm == 40
+    # Past the column and a stated height: advisory, and nothing is scaled or moved.
+    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "b", "x": 92, "w": 96},
+                                                   {"op": "height", "mm": 35}])
+    res = compose(project, "fig-1", write=False)
+    assert (res.width_mm, res.height_mm) == (92 + 96, 40)
+    assert "the figure is 188 mm wide; its column allows 183 mm" in res.warnings
+    assert "the figure is 40 mm tall; its height allows 35 mm" in res.warnings
+    assert S.load_figure(project.figure_json("fig-1"))["panels"][1]["place"]["w"] == 96  # unscaled
+    assert "the figure is 188 mm wide; its column allows 183 mm" in figure_status(project, "fig-1").warnings
+    # Empty bands above and to the left are cut; figure.json keeps its coordinates.
+    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "a", "x": 10, "y": 7},
+                                                   {"op": "place", "panel": "b", "y": 7}, {"op": "height", "mm": None}])
+    res = compose(project, "fig-1", write=False)
+    assert (res.left_mm, res.top_mm, res.width_mm, res.height_mm) == (10, 7, 92 + 96 - 10, 40)
+    root = ET.fromstring(res.svg)
+    assert [float(v) / PT for v in root.get("viewBox").split()] == pytest.approx([10, 7, 178, 40], abs=0.001)
+    assert root.get("width") == "178mm"
 
 
-def test_a_letter_past_the_figures_edge_is_reported_with_the_overhang(project):
-    """A letter moved off the figure is missing from print, and a canvas cannot show it to be
-    dragged back: [-500, 0] was drawn at x=-1417 pt and nothing said so."""
-    assert not any("letter" in w for w in compose(project, "fig-1", write=False).warnings)
-    # At a stated height: a figure that fits (no height) grows to take the letters in (0.4.0).
+def test_a_journals_stated_maximum_height_is_a_cap_and_one_it_does_not_state_is_none(project):
+    # Neuron states 200 mm (neuron.json, maxHeightMm); Science states none (D4).
+    S.update_figure(project.figure_json("fig-1"), [{"op": "place", "panel": "a", "h": 210}, {"op": "journal", "journal": "neuron"},
+                                                   {"op": "width", "mm": 183, "scale_panels": False}])
+    assert any(w.endswith("allows 200 mm") and "210 mm tall" in w for w in compose(project, "fig-1", write=False).warnings)
+    S.update_figure(project.figure_json("fig-1"), [{"op": "journal", "journal": "science"}])
+    assert not any("tall" in w for w in compose(project, "fig-1", write=False).warnings)
+
+
+def test_letters_and_annotations_are_inside_the_fitted_figure(project):
+    """A letter moved off the panels and an annotation above them grow the figure (0.4 ignored
+    annotations, and one above every panel was cut off)."""
     S.update_figure(project.figure_json("fig-1"), [{"op": "letter", "panel": "a", "offset_mm": [-5, 0]},
-                                                   {"op": "letters", "patch": {"offset_mm": [0, -1.5]}},
-                                                   {"op": "height", "mm": 60}])
-    warnings = [w for w in compose(project, "fig-1", write=False).warnings if "letter" in w]
-    assert sorted(warnings) == ["the letter of panel 'a' extends 1.5 mm past the figure's top edge",
-                                "the letter of panel 'a' extends 5 mm past the figure's left edge",
-                                "the letter of panel 'b' extends 1.5 mm past the figure's top edge"]
+                                                   {"op": "letters", "patch": {"offset_mm": [0, -1.5]}}])
+    res = compose(project, "fig-1", write=False)
+    assert (res.left_mm, res.top_mm) == (-5, -1.5)
+    assert res.height_mm == 61.5
+    S.update_figure(project.figure_json("fig-1"), [{"op": "annotation.add", "annotation": {
+        "id": "r", "type": "box", "from": {"x": 20, "y": -10}, "to": {"x": 30, "y": -4}}}])
+    res = compose(project, "fig-1", write=False)
+    assert res.top_mm == -10 and res.height_mm == 70
+    S.update_figure(project.figure_json("fig-1"), [{"op": "annotation.update", "id": "r",
+                                                    "patch": {"to": {"x": 200, "y": 5}}}])
+    assert compose(project, "fig-1", write=False).width_mm == 205  # from the letter at −5 to 200
 
 
 def test_ink_outside_a_panels_box_is_reported_with_its_overhang_but_clipped_data_is_not(project):

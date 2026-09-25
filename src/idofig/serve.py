@@ -188,7 +188,8 @@ class Server:
             entry["styles"] = self._styles(fid, doc)
             journal = J.load(doc.get("journal") or self.project.journal, str(self.project.root))
             entry["journal"] = journal.get("id") or doc.get("journal") or self.project.journal
-            entry["width_mm"] = J.width_mm(journal, doc["width"])
+            entry["width_mm"] = J.width_mm(journal, doc["width"])  # the column: a cap, not the size
+            entry["max_height_mm"] = journal.get("maxHeightMm")  # null where the journal states none
             # The journal's figure rules on what matplotlib drew (the check CI runs, minus
             # the rebuild): an editor shows them beside the figure as it is edited.
             errors, warnings = compliance(self.project, fid, doc)

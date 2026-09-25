@@ -69,9 +69,9 @@ in the lock (those a declared producer draws) and recomposes `figure.svg`.
 |---|---|---|---|
 | `schema` | idofig | yes | `2`, or `3` when the figure uses a key idofig 0.3 added (below) |
 | `id` | idofig | yes | equals the directory name |
-| `width` | idofig | yes | `{"preset": "single"\|"onehalf"\|"double"}` or `{"mm": n}` |
-| `height` | idofig | no | `{"mm": n}`; absent → the figure **fits** what it draws (below) |
-| `fit_margin_mm` | idofig | no | 0–50 mm of white kept around what a fitted figure draws (default 0); schema 3 |
+| `width` | idofig | yes | `{"preset": "single"\|"onehalf"\|"double"}` or `{"mm": n}`: the column, the figure's **maximum** width (below) |
+| `height` | idofig | no | `{"mm": n}`: a **maximum** height; absent → only the journal's `maxHeightMm`, if it states one |
+| `fit_margin_mm` | idofig | no | 0–50 mm of white kept around what the figure draws (default 0); schema 3 |
 | `journal` | idofig | no | overrides the project's journal for this figure |
 | `letters` | idofig | no | `{show, case: lower\|upper, weight: normal\|bold, size_pt, offset_mm: [dx, dy], wrapper: none\|parens\|period, color}`; `offset_mm` in mm, each within ±100; `color` is a colour as an annotation's is (default `#000000`); any other key is an error |
 | `producers` | idofig | no | see below |
@@ -79,15 +79,26 @@ in the lock (those a declared producer draws) and recomposes `figure.svg`.
 | `annotations` | idofig | no | see below |
 | anything else | the application | no | preserved untouched (`caption`, `namespace`, `label`, …) |
 
-**Fit.** With no `height`, compose makes the figure as tall as what it draws: every panel
-(a trimmed one at its crop's size, see style.json), every letter (its cap height, where
-`letters.offset_mm` and the panel's `letter_offset_mm` put it), plus `fit_margin_mm` above and
-below. An empty band above everything is cut by starting the view lower: figure.svg's
-`viewBox` is `0 <top> W H` with `<top>` in points, and figure.json's coordinates are untouched
-— a panel at `y: 12` is still at 12 mm, it is only the view that starts at 12 mm. Neither the
-height nor the top is stored anywhere (compose's result reports `height_mm` and `top_mm`); the
-width stays the journal's column. Annotations are not measured (ponytail: an annotation above
-every panel is cut by a fit; state a height, or place it inside).
+**Fit (0.5.0).** A figure is always exactly as large as what it draws, both ways: every
+panel (a trimmed one at its crop's size, see style.json), every letter (its cap height and
+0.6 em a character, where `letters.offset_mm` and the panel's `letter_offset_mm` put it) and
+every annotation that resolves (a text at 0.55 em a character, unrotated), plus
+`fit_margin_mm` on each side. Empty bands above and to the left are cut by starting the view
+there: figure.svg's `viewBox` is `<left> <top> W H` in points, and figure.json's coordinates
+are untouched — a panel at `x: 10, y: 12` is still at 10, 12 mm; the view starts there.
+Nothing of the fitted size is stored (compose's result reports `width_mm`, `height_mm`,
+`left_mm`, `top_mm`; figure.svg's `width`/`height` carry it).
+
+`width` and `height` are **maxima**, never sizes: the column (`width`) caps the width, and the
+height is capped by `height` when figure.json states one and by the journal's `maxHeightMm`
+when the journal states one (D4: no stated number, no cap). A figure past a cap is reported —
+`the figure is 188 mm wide; its column allows 183 mm`, `the figure is 210 mm tall; Neuron
+allows 200 mm` — advisory, from `compose`, `status` and `check`; nothing is shrunk, rescaled
+or moved. Figures written for 0.4 or older read as before and need no edit: their `height`
+was the paper's size and is now its cap, so an old figure only loses the empty paper it had.
+No schema bump: an older idofig draws the same figure with that empty paper around it, not a
+wrong one. (0.4 fitted only a figure with no `height`, kept the column's full width and
+ignored annotations; 0.4's figure-edge findings are gone, as nothing drawn can cross an edge.)
 
 **Schema 3** is schema 2 plus the keys an idofig older than 0.3 would ignore without a
 word: a panel's `letter_offset_mm` and `letters.color`, and 0.4's `fit_margin_mm` (0.2.x checks no panel or letters key
@@ -171,8 +182,8 @@ before the atomic write. A field an operation does not take is an error, never i
 | `annotation.add` | `annotation` | add an annotation |
 | `annotation.update` | `id`, `patch` | merge `patch` into an annotation; a `null` value removes that field |
 | `annotation.remove` | `id` | remove an annotation |
-| `width` | `preset` or `mm`, `scale_panels?` | set the width; the layout is scaled to it (panels' `x`/`w`, point anchors' `x`) unless `scale_panels: false` |
-| `height` | `mm` | fix the height; `null` returns to the lowest panel edge |
+| `width` | `preset` or `mm`, `scale_panels?` | set the column (the maximum width); the layout is scaled to it (panels' `x`/`w`, point anchors' `x`) unless `scale_panels: false` |
+| `height` | `mm` | set a maximum height; `null` removes it (the journal's `maxHeightMm` still caps) |
 | `letters` | `patch` | merge into `letters`; a `null` value removes that field |
 | `journal` | `journal` | per-figure journal; `null` removes it |
 | `app.set` | `key`, `value` | set an application key (`caption`, …); idofig's own keys are refused |
@@ -466,19 +477,18 @@ passes.
 | finding | reported by | text |
 |---|---|---|
 | a `{"mm": n}` width that is none of the journal's stated widths (within 0.5 mm) | `check`, the server's `rules` | `fig-1: width 170 mm matches none of Nature's widths (single 89 mm, double 183 mm)` |
-| a panel's box crosses a figure edge by more than 0.01 mm | `compose`, `status`, `check` | `panel 'b' extends 5 mm past the figure's right edge` (left, top, right or bottom) |
-| a drawn letter's top-left corner is past a figure edge by more than 0.01 mm | `compose`, `status`, `check` | `the letter of panel 'a' extends 5 mm past the figure's left edge` |
+| the fitted figure is wider than its column by more than 0.01 mm | `compose`, `status`, `check` | `the figure is 188 mm wide; its column allows 183 mm` |
+| the fitted figure is taller than figure.json's `height` or the journal's `maxHeightMm` by more than 0.01 mm | `compose`, `status`, `check` | `the figure is 40 mm tall; its height allows 35 mm`, `the figure is 210 mm tall; Neuron allows 200 mm` |
 | a named text, legend or axes part that is drawn leaves its panel's box by more than 0.2 mm | `check`, the server's `rules` | `fig-1/a: main.xlabel is 1.3 mm outside its panel's box` |
 | panel letters smaller than the journal's `minFontPt` | `check`, the server's `rules` | `fig-1: panel letters are 4 pt; Nature requires at least 5 pt` |
 | a drawn stroke — a line (not a markers-only one), spine, patch (not one whose edge has no line style), collection (its `thinnest_pt` when its marks differ in width) or an axis' major tick marks (its `tickwidth`) — thinner than the journal's `lineWeightPt.min` | `check`, the server's `rules` | `fig-1/a: main.series.links is 0.2 pt wide; Nature states at least 0.25 pt` |
 | a drawn text larger than the journal's `maxFontPt` | `check`, the server's `rules` | `fig-1/a: main.title is 9 pt; Nature states at most 7 pt` |
 
-Two rules are not advisory: they are errors, and `check` fails on them.
+One rule is not advisory: it is an error, and `check` fails on it.
 
 | finding | reported by | text |
 |---|---|---|
 | a drawn text smaller than the journal's `minFontPt` | `check`, the server's `rules` | `fig-1/a: main.xlabel is 4 pt; Nature requires at least 5 pt` |
-| a fixed `height` taller than the journal's `maxHeightMm` | `check`, the server's `rules` | `fig-1: height 250 mm exceeds Nature's 247 mm` |
 
 Each rule applies only where the journal states its number (D4). An edge drawn in no colour
 (its manifest colour is `none`: pcolor's and a bar's default edge, a spine set to `none`) is

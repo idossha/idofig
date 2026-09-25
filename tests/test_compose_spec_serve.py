@@ -32,7 +32,7 @@ def test_compose_namespaces_ids_places_letters_and_is_fast(project):
     assert len(ids) == len(set(ids)), "ids must be unique across panels"
     for ref in re.findall(r"url\(#([^)]+)\)", svg):
         assert ref in ids
-    assert res.width_mm == 183
+    assert res.width_mm == 180  # fitted: b ends at 92 + 88 mm, inside Nature's 183 mm column
 
 
 def test_annotations_anchor_to_parts_and_data_and_detach(project):

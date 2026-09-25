@@ -696,9 +696,8 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
     if "mm" in doc["width"] and presets and not any(abs(width - v) < 0.5 for v in presets.values()):
         warnings.append(f"{fid}: width {width:g} mm matches none of {jname}'s widths "
                         f"({', '.join(f'{k} {v:g} mm' for k, v in presets.items())})")
-    max_h = journal.get("maxHeightMm")
-    if max_h and doc.get("height") and doc["height"]["mm"] > max_h:
-        errors.append(f"{fid}: height {doc['height']['mm']:g} mm exceeds {jname}'s {max_h:g} mm")
+    # The journal's maxHeightMm is a cap on the fitted height; compose reports exceeding it,
+    # advisory (user decision 2026-09-24: sizes fit the content, journal and column are maxima).
     # Letters are figure text, held to the journal's floor but not its ceiling: no preset states a
     # label size, and labels are set larger than the text they label (8 pt over Nature's 7; D4).
     letters = J.letter_style(journal, doc.get("letters"))

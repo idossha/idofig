@@ -55,6 +55,7 @@ class ComposeResult:
     width_mm: float
     height_mm: float
     top_mm: float = 0.0
+    left_mm: float = 0.0
     changed: bool = False
     warnings: list[str] = field(default_factory=list)
     detached: list[dict] = field(default_factory=list)
@@ -63,7 +64,7 @@ class ComposeResult:
 
     def to_json(self) -> dict:
         return {"path": str(self.path), "width_mm": self.width_mm, "height_mm": self.height_mm,
-                "top_mm": self.top_mm, "changed": self.changed, "warnings": self.warnings, "detached": self.detached,
+                "top_mm": self.top_mm, "left_mm": self.left_mm, "changed": self.changed, "warnings": self.warnings, "detached": self.detached,
                 "missing": self.missing, "ms": round(self.ms, 2)}
 
 
@@ -253,7 +254,9 @@ def _arrowhead(x1: float, y1: float, x2: float, y2: float, size: float, color: s
     return f'<polygon points="{d}" style="fill: {color}; stroke: none"/>'
 
 
-def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str | None, str | None]:
+def _annotation(a: dict, anchors: _Anchors, journal: dict
+                ) -> tuple[str | None, str | None, tuple[float, float, float, float] | None]:
+    """(markup, why it is detached, the box it covers in pt as x0, y0, x1, y1)."""
     s = _style(a, journal)
     aid = escape(a["id"])
     t = a["type"]
@@ -261,17 +264,22 @@ def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str |
     if t == "text":
         p = anchors.resolve(a["at"])
         if isinstance(p, str):
-            return None, p
+            return None, p, None
         anchor = a.get("align", "start")
         rot = s.get("rotate")
         transform = f' transform="rotate({fmt(rot)} {fmt(p[0])} {fmt(p[1])})"' if rot else ""
+        # ponytail: a text's width is estimated at 0.55 em a character (no font metrics without
+        # matplotlib, rule 7) and its rotation is ignored; place a long rotated text inside.
+        size, tw = s["size_pt"], 0.55 * s["size_pt"] * len(a["text"])
+        x0 = p[0] - tw * {"start": 0.0, "middle": 0.5, "end": 1.0}.get(anchor, 0.0)
+        box = (x0, p[1] - size * 0.74, x0 + tw, p[1] + size * 0.22)
         return (f'<text id="{aid}" data-idofig-annotation="text" x="{fmt(p[0])}" y="{fmt(p[1])}"{transform} '
-                f'style="{_font(s["size_pt"], s["weight"], color)}; text-anchor: {anchor}">{escape(a["text"])}</text>'), None
+                f'style="{_font(s["size_pt"], s["weight"], color)}; text-anchor: {anchor}">{escape(a["text"])}</text>'), None, box
     p1 = anchors.resolve(a["from"])
     p2 = anchors.resolve(a["to"])
     for p in (p1, p2):
         if isinstance(p, str):
-            return None, p
+            return None, p, None
     (x1, y1), (x2, y2) = p1, p2  # type: ignore[misc]
     w = s["width_pt"]
     stroke = f"fill: none; stroke: {color}; stroke-width: {fmt(w)}; stroke-linecap: butt; stroke-linejoin: miter"
@@ -291,7 +299,9 @@ def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str |
             sx1, sy1 = x1 + ux * size * 0.8, y1 + uy * size * 0.8
             parts.append(_arrowhead(x2, y2, x1, y1, size, color))
         line = f'<path d="M {fmt(sx1)} {fmt(sy1)} L {fmt(sx2)} {fmt(sy2)}" style="{stroke}"/>'
-        return f'<g id="{aid}" data-idofig-annotation="{t}">{line}{"".join(parts)}</g>', None
+        r = size * 0.45 if head != "none" else w / 2
+        box = (min(x1, x2) - r, min(y1, y2) - r, max(x1, x2) + r, max(y1, y2) + r)
+        return f'<g id="{aid}" data-idofig-annotation="{t}">{line}{"".join(parts)}</g>', None, box
     if t == "bracket":
         gap = s["gap_mm"] * PT_PER_MM
         leg = s["leg_mm"] * PT_PER_MM
@@ -310,23 +320,18 @@ def _render_annotation(a: dict, anchors: _Anchors, journal: dict) -> tuple[str |
         if a.get("label"):
             label = (f'<text x="{fmt((x1 + x2) / 2)}" y="{fmt(ly)}" style="{_font(s["size_pt"], s["weight"], color)}; '
                      f'text-anchor: middle">{escape(a["label"])}</text>')
-        return f'<g id="{aid}" data-idofig-annotation="bracket"><path d="{d}" style="{stroke}"/>{label}</g>', None
+        ys = [ybar, yleg] + ([ly - s["size_pt"] * 0.74, ly + s["size_pt"] * 0.22] if label else [])
+        lw = 0.55 * s["size_pt"] * len(a.get("label") or "") / 2
+        box = (min(x1, x2, (x1 + x2) / 2 - lw), min(ys), max(x1, x2, (x1 + x2) / 2 + lw), max(ys))
+        return f'<g id="{aid}" data-idofig-annotation="bracket"><path d="{d}" style="{stroke}"/>{label}</g>', None, box
     if t == "box":
         x, y = min(x1, x2), min(y1, y2)
         fill = s["fill"]
         style = stroke.replace("fill: none", f"fill: {fill}")
         return (f'<rect id="{aid}" data-idofig-annotation="box" x="{fmt(x)}" y="{fmt(y)}" '
-                f'width="{fmt(abs(x2 - x1))}" height="{fmt(abs(y2 - y1))}" style="{style}"/>'), None
-    return None, f"unknown annotation type {t!r}"
-
-
-def _outside_figure(what: str, x: float, y: float, w: float, h: float, width_mm: float,
-                    height_mm: float) -> list[str]:
-    """One warning per figure edge a box (mm) crosses by more than 0.01 mm, with the overhang:
-    what is past the edge is cut off in print."""
-    over = {"left": -x, "top": -y, "right": x + w - width_mm, "bottom": y + h - height_mm}
-    return [f"{what} extends {fmt(mm, 2)} mm past the figure's {edge} edge"
-            for edge, mm in over.items() if mm > 0.01]
+                f'width="{fmt(abs(x2 - x1))}" height="{fmt(abs(y2 - y1))}" style="{style}"/>'), None, \
+            (x, y, x + abs(x2 - x1), y + abs(y2 - y1))
+    return None, f"unknown annotation type {t!r}", None
 
 
 def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeResult:
@@ -423,50 +428,59 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
             px, py = (v * PT_PER_MM for v in pn.get("letter_offset_mm", (0, 0)))
             lx = pn["place"]["x"] * PT_PER_MM + ox + px
             ly = pn["place"]["y"] * PT_PER_MM + oy + py + size * 0.74
-            # Its top-left corner is checked: a letter moved off the figure is missing from
-            # print, and a canvas cannot show it to drag it back. Its cap height is what a fit keeps.
+            # The figure grows to take it in (a letter moved off the paper would be missing from
+            # print): its cap height, and 0.6 em a character across (ponytail: no font metrics).
             boxes.append((f"the letter of panel {pn['id']!r}", lx / PT_PER_MM, (ly - size * 0.74) / PT_PER_MM,
-                          0, size * 0.74 / PT_PER_MM))
+                          size * 0.6 * len(text) / PT_PER_MM, size * 0.74 / PT_PER_MM))
             body.append(
                 f'<text id="{pn["id"]}.letter" data-idofig-role="letter" x="{fmt(lx)}" y="{fmt(ly)}" '
                 f'style="{font}">{escape(text)}</text>'
             )
 
-    top_mm = 0.0
-    if doc.get("height"):
-        height_mm = float(doc["height"]["mm"])
-    elif boxes:
-        # Fit (no height stated): the figure is as tall as what it draws, and an empty band above
-        # everything is cut by starting the view lower — figure.json's coordinates stay as they
-        # are; the viewBox's origin says where the view starts. Derived here, never stored (D1).
-        margin = float(doc.get("fit_margin_mm", 0.0))
-        top_mm = round(min(b[2] for b in boxes) - margin, 3)
-        height_mm = round(max(b[2] + b[4] for b in boxes) + margin - top_mm, 3)
-    else:
-        height_mm = 50.0
-    for what, bx, by, bw, bh in boxes:
-        warnings += _outside_figure(what, bx, by - top_mm, bw if not what.startswith("the letter") else 0,
-                                    bh if not what.startswith("the letter") else 0, width_mm, height_mm)
-    W, H, T = width_mm * PT_PER_MM, height_mm * PT_PER_MM, top_mm * PT_PER_MM
-
     anchors = _Anchors(doc, manifests)
     ann_out = []
     detached = []
     for a in doc.get("annotations", []):
-        markup, problem = _render_annotation(a, anchors, journal)
+        markup, problem, box = _annotation(a, anchors, journal)
         if problem:
             detached.append({"id": a["id"], "reason": problem})
         elif markup:
             ann_out.append(markup)
+            boxes.append((f"annotation {a['id']!r}", box[0] / PT_PER_MM, box[1] / PT_PER_MM,
+                          (box[2] - box[0]) / PT_PER_MM, (box[3] - box[1]) / PT_PER_MM))
     if ann_out:
         body.append('<g id="annotations">' + "".join(ann_out) + "</g>")
+
+    # The figure is always as large as what it draws (user decision 2026-09-24): every panel (a
+    # trimmed one at its crop), letter and annotation, plus fit_margin_mm. Empty bands above and
+    # to the left are cut by starting the view there; figure.json's coordinates stay as they are.
+    # The column's width and the height (figure.json's, and the journal's maxHeightMm) are maxima:
+    # exceeding one is reported, never shrunk. Derived here, never stored (D1).
+    margin = float(doc.get("fit_margin_mm", 0.0))
+    if boxes:
+        left_mm = round(min(b[1] for b in boxes) - margin, 3)
+        top_mm = round(min(b[2] for b in boxes) - margin, 3)
+        fit_w = round(max(b[1] + b[3] for b in boxes) + margin - left_mm, 3)
+        height_mm = round(max(b[2] + b[4] for b in boxes) + margin - top_mm, 3)
+    else:
+        left_mm, top_mm, fit_w, height_mm = 0.0, 0.0, width_mm, 50.0
+    if fit_w > width_mm + 0.01:
+        warnings.append(f"the figure is {fmt(fit_w, 2)} mm wide; its column allows {fmt(width_mm, 2)} mm")
+    caps = [(float(doc["height"]["mm"]), "its height")] if doc.get("height") else []
+    if journal.get("maxHeightMm"):
+        caps.append((float(journal["maxHeightMm"]), f"{journal.get('name') or journal.get('id')}"))
+    for cap, who in caps:
+        if height_mm > cap + 0.01:
+            warnings.append(f"the figure is {fmt(height_mm, 2)} mm tall; {who} allows {fmt(cap, 2)} mm")
+    width_mm = fit_w
+    W, H, T, L = width_mm * PT_PER_MM, height_mm * PT_PER_MM, top_mm * PT_PER_MM, left_mm * PT_PER_MM
 
     svg = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
-        f'width="{fmt(width_mm)}mm" height="{fmt(height_mm)}mm" viewBox="0 {fmt(T)} {fmt(W)} {fmt(H)}" '
+        f'width="{fmt(width_mm)}mm" height="{fmt(height_mm)}mm" viewBox="{fmt(L)} {fmt(T)} {fmt(W)} {fmt(H)}" '
         f'data-idofig-figure="{escape(figure_id)}">\n'
-        f'<rect id="figure.background" data-idofig-role="background" x="0" y="{fmt(T)}" width="{fmt(W)}" height="{fmt(H)}" '
+        f'<rect id="figure.background" data-idofig-role="background" x="{fmt(L)}" y="{fmt(T)}" width="{fmt(W)}" height="{fmt(H)}" '
         'style="fill: #ffffff"/>\n'
         + "\n".join(body)
         + "\n</svg>\n"
@@ -477,7 +491,7 @@ def compose(project: Project, figure_id: str, *, write: bool = True) -> ComposeR
         if old != svg:
             write_atomic(out_path, svg)
             changed = True
-    return ComposeResult(svg=svg, path=out_path, width_mm=width_mm, height_mm=height_mm, top_mm=top_mm, changed=changed,
+    return ComposeResult(svg=svg, path=out_path, width_mm=width_mm, height_mm=height_mm, top_mm=top_mm, left_mm=left_mm, changed=changed,
                          warnings=warnings, detached=detached, missing=missing,
                          ms=(time.perf_counter() - t0) * 1000)
 
