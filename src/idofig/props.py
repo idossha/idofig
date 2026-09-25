@@ -141,7 +141,8 @@ _SIZE = _num(0.1, 500, "pt")
 _OFFSET = _num(-100, 100, "mm")
 
 # A part's move from where the script drew it, in mm with y down. Applied after the layout
-# is frozen (``styling.apply_offsets``), so the part lands exactly that far away.
+# is frozen (``styling.apply_offsets``), so the part lands exactly that far away. An axes moves
+# with everything drawn in it (0.6.0).
 OFFSETS = ("dx_mm", "dy_mm")
 TICK_MARKS = ("tickdir", "ticklength", "tickwidth")
 
@@ -164,7 +165,7 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
         "visible": _bool, "size": _num(0, 10000), "cmap": _cmap, "vmin": _num(), "vmax": _num(),
     },
     "image": {"alpha": _ALPHA, "visible": _bool, "cmap": _cmap, "vmin": _num(), "vmax": _num()},
-    "axes": {"facecolor": _color, "visible": _bool},
+    "axes": {"facecolor": _color, "visible": _bool, "dx_mm": _OFFSET, "dy_mm": _OFFSET},
     "axis": {"visible": _bool, "tickdir": _enum({"in", "out", "inout"}), "ticklength": _WIDTH, "tickwidth": _WIDTH},
     "spine": {"visible": _bool, "linewidth": _WIDTH, "color": _color},
     "legend": {

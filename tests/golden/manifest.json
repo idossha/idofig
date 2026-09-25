@@ -42,7 +42,9 @@
       ],
       "props": {
         "facecolor": "#ffffff",
-        "visible": true
+        "visible": true,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0
       }
     },
     "main.background": {

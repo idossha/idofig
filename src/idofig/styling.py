@@ -18,6 +18,7 @@ from functools import partial
 from typing import Any
 
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.collections import PathCollection
 from matplotlib.colors import to_hex, to_rgba
 from matplotlib.legend import Legend
@@ -151,7 +152,7 @@ def get_props(artist: Any, kind: str) -> dict:
             return {"alpha": _alpha(artist), "visible": artist.get_visible(), "cmap": artist.get_cmap().name,
                     "vmin": _num(vmin, 6), "vmax": _num(vmax, 6)}
         if kind == "axes":
-            return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible()}
+            return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible(), **_offsets(artist)}
         if kind == "axis":
             tick = artist.majorTicks[0]  # the tick every later one copies its settings from
             return {"visible": artist.get_visible(), "tickdir": tick.get_tickdir(),
@@ -318,6 +319,28 @@ def _targets(table: PartTable, pattern: str) -> tuple[list[str], bool]:
     return [], False
 
 
+def _movers(table: PartTable, names: list[str]) -> list[str]:
+    """Of the parts an entry addresses, those a move moves itself: a part drawn in an axes the
+    same entry moves comes along with its axes (moved again, `main.*` moved main's labels twice
+    as far as main)."""
+    moved_axes = {n for n in names if table.parts[n].kind == "axes"}
+    axes_ids = {id(a) for n in moved_axes for a in table.parts[n].artists}
+
+    def inside(name: str) -> bool:
+        part = table.parts[name]
+        # by its axes, or by its parent's: a text with a gid has no parent (the montage tags)
+        if part.kind != "axes" and any(id(getattr(a, "axes", None)) in axes_ids for a in part.artists):
+            return True
+        parent = part.parent
+        while parent is not None:
+            if parent in moved_axes:
+                return True
+            parent = table.parts[parent].parent if parent in table.parts else None
+        return False
+
+    return [n for n in names if not inside(n)]
+
+
 def _specificity(pattern: str, table: PartTable) -> int:
     if "*" in pattern:
         return 0
@@ -336,14 +359,15 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
                 report.detached.append(pattern)
             continue
         good: dict[str, Any] = {}
-        targets = {(table.parts[n].kind, table.parts[n].role) for n in names}
+        movers = _movers(table, names)
         for key, value in props.items():
             if key in P.OFFSETS and not final:
                 # Taken in the final pass, when every part has its role: before the draw, a tick
                 # label with a gid is not known to be one, and its offset got past the refusal.
                 continue
             problems = []
-            for kind, role in targets:
+            for kind, role in {(table.parts[n].kind, table.parts[n].role)
+                               for n in (movers if key in P.OFFSETS else names)}:
                 problems += P.validate(kind, {key: value}, group=group or len(names) > 1, role=role)
             if problems:
                 entry = {"part": pattern, "prop": key, "reason": "; ".join(sorted(set(problems)))}
@@ -362,6 +386,8 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
                 # set, and is base again unless the script has set the property since.
                 earlier = artist.__dict__.setdefault("_idofig_base", {})
                 for key, value in good.items():
+                    if key in P.OFFSETS and name not in movers:
+                        continue
                     if key == "rotation" and not final and _axis3d_of(artist) is not None:
                         # The angle a 3D axis turns its label to is known once drawn (read before,
                         # base was 0 for a label drawn at 87.4°); set then, it still reaches the layout.
@@ -411,10 +437,14 @@ def apply_offsets(fig, moves: list[tuple[Any, float, float]], undo: Undo) -> Non
     3 pt xlabel nudge shrank the axes instead). A move is a translation evaluated at draw
     time, in the drawing's own dpi."""
     _freeze(fig, undo)
-    for artist, dx, dy in moves:
+    moved_axes: set[int] = set()
+    # Axes first: a moved legend's anchor is read where its axes already is.
+    for artist, dx, dy in sorted(moves, key=lambda m: not isinstance(m[0], Axes)):
         dx_in, dy_in = dx / MM_PER_IN, -dy / MM_PER_IN
         shift = ScaledTranslation(dx_in, dy_in, fig.dpi_scale_trans)
-        if isinstance(artist, Legend):
+        if isinstance(artist, Axes):
+            _move_axes(artist, dx_in, dy_in, fig, undo, moved_axes)
+        elif isinstance(artist, Legend):
             # Its anchor box moves, keeping its `loc`, padding and size: pinned by a corner to a
             # zero-size box, a mode="expand" legend collapsed to 0 mm, and one measured by the
             # manifest's renderer came out 0.34 mm lower. The anchor goes back as the attribute
@@ -433,6 +463,26 @@ def apply_offsets(fig, moves: list[tuple[Any, float, float]], undo: Undo) -> Non
         else:
             undo.keep(artist, "_transform", "_transformSet")
             artist.set_transform(artist.get_transform() + shift)
+
+
+def _move_axes(ax, dx_in: float, dy_in: float, fig, undo: Undo, moved: set[int]) -> None:
+    """Move an axes' box, and so everything drawn in it (its labels, ticks, title, legend, images,
+    texts, annotations: all are placed from the box), as the save laid it out. Its twins share
+    the box and move with it, once. `_set_position`, not `set_position`: that one takes the axes
+    out of any later layout, and a notebook's next save left it where this save moved it. A
+    locator (an inset, a colorbar made from `ax=`) places the box anew at every draw, so it is
+    set aside for the save."""
+    twins = ax._twinned_axes.get_siblings(ax)
+    if any(id(t) in moved for t in twins):
+        return
+    moved.update(id(t) for t in twins)
+    for t in twins:
+        undo.callback(t.set_axes_locator, t.get_axes_locator())
+        undo.callback(t._set_position, t.get_position(original=True), "original")
+        undo.callback(t._set_position, t.get_position(), "active")
+        t.set_axes_locator(None)
+    w_in, h_in = fig.get_size_inches()
+    ax._set_position(ax.get_position().translated(dx_in / w_in, dy_in / h_in), "both")  # its twins too
 
 
 def _freeze(fig, undo: Undo) -> None:

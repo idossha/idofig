@@ -135,6 +135,7 @@ Every refinement is a small named delta that survives the script being re-run:
 | one panel's letter | `figure.json` `panels[].letter_offset_mm` | mm, y down |
 | a part's look | `style.json` (`fontsize`, `color`, …) | pt, … |
 | a text or legend part's position | `style.json` `dx_mm`, `dy_mm` | mm, y down |
+| an axes, or a group of axes, with everything drawn in it | `style.json` `dx_mm`, `dy_mm` on its name or a pattern (`row1.*`) | mm, y down |
 | an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
 | the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |
@@ -212,4 +213,5 @@ they replaced (`before`) and the new file's sha256 (`after_sha`), which is what 
 takes. A failed method answers an error with `data.type`, and `data.problems` when a file
 would be invalid.
 
-See [SPEC.md](SPEC.md) for the complete file formats and the naming grammar.
+See [SPEC.md](SPEC.md) for the complete file formats and the naming grammar, and
+[docs/producers.md](docs/producers.md) for how to build a figure that stays editable.

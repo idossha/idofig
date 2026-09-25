@@ -22,8 +22,9 @@ must not change a byte of it. Which source draws it depends on why it is regener
 
 It writes ``panel.svg``, ``manifest.json`` and ``versions.json`` (the idofig that drew them,
 and the matplotlib and numpy the bytes depend on) beside itself. The committed files were
-drawn by idofig 0.3.0, which bumped ``build.RENDER``; its ``panel.svg`` is byte for byte the
-one 0.2.2 (commit 99a8790) drew.
+drawn by idofig 0.6.0 (0.3.0 last bumped ``build.RENDER``); its ``panel.svg`` is byte for byte
+the one 0.2.2 (commit 99a8790) drew, and 0.6.0 changed only the manifest (an axes' props gained
+``dx_mm``/``dy_mm``).
 """
 
 from __future__ import annotations

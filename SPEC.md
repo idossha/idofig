@@ -209,8 +209,9 @@ file uses one and `1` when it uses none, so 0.3 refuses the one file it would dr
   matplotlib uses the pads (its rule, kept: set `pad_mm` lower for a narrower gap). Each value
   is a finite number from 0 to 100; any other key is an error. A panel with no constrained
   layout (`idofig.panels(..., layout=None)`, axes placed with `axes_mm`) takes no spacing: the
-  manifest's `warnings` say `style.json layout had no effect: …` and nothing moves — idofig never
-  rewrites where a script placed an axes.
+  manifest's `warnings` say `style.json layout had no effect: …` and nothing moves — spacing never
+  rewrites where a script placed an axes. To move one (or a group of them), give it an
+  explicit `dx_mm`/`dy_mm` (Moving a part, below).
 * `trim: true`, or `trim_mm: <margin>` (0–50 mm; alone it turns trim on, and `trim: false`
   keeps it off) — crop the panel to its ink plus the margin. The ink is every drawn part's box
   after styles and `dx_mm`/`dy_mm` (a panel's or an axes' background is not ink) and every
@@ -232,7 +233,7 @@ then single parts — the most specific wins. Properties by part kind:
 | patch | facecolor, edgecolor, color, linewidth, linestyle, alpha, visible, hatch |
 | collection | facecolor, edgecolor, color, linewidth, alpha, visible, size, cmap, vmin, vmax |
 | image | alpha, visible, cmap, vmin, vmax |
-| axes | facecolor, visible |
+| axes | facecolor, visible, dx_mm, dy_mm |
 | axis | visible, tickdir (in\|out\|inout), ticklength (pt), tickwidth (pt) |
 | spine | visible, linewidth, color |
 | legend | visible, loc, frameon, fontsize, title, dx_mm, dy_mm |
@@ -273,6 +274,22 @@ characters; a `rotation` on the label turns that off (`set_rotate_label(False)`)
 labels (role `tick`, group role `ticks`) refuse them: matplotlib copies a tick label's
 transform to the ticks it creates later. So do a legend's entries and title (roles
 `legend-entry`, `legend-title`): their keys and the frame would stay behind; move the legend.
+
+**Moving an axes, or a group of axes (0.6.0).** `dx_mm`/`dy_mm` on an `axes` part (a
+colorbar's too) move its box after the layout is frozen, and so everything drawn in it: tick
+marks and labels, axis labels, title, legend, images, texts and annotations placed in its data
+or axes coordinates. Its twins (`twinx`) share the box and move with it. What is placed in
+the figure's coordinates (`fig.text`, a figure legend) or in another axes does not move. On a
+pattern or group entry (`row1.*`, `stim.brain.*`), each axes it names moves by the offset,
+and a part it also names that is drawn in one of those axes — by its `parent`, or by its axes
+for a text with a gid of its own — is not moved again: `main.*` moves main and its labels
+together, once. Works the same on a panel placed by hand (`layout=None`, `axes_mm`) and on a
+constrained one; in the latter the engine does not make room (it has laid the panel out
+already), so a moved axes may overlap a neighbour, which `trim` and the ink check see where
+it now is. The manifest's boxes, `trim` and compose's fit all measure the moved axes. An axes
+is moved, never resized: its size is the script's (panels are never scaled). The script is
+never rewritten; to fold a settled move into it, change its constants, delete the entries,
+rebuild, and compare the panel.
 
 All of this lasts one save. Once the panel is written, the script's figure is as it was —
 its layout engine, its titles' and legends' placement and anchors, each part where the script put it —

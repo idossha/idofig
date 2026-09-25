@@ -95,3 +95,47 @@ panel.svg bytes did not change. Moves stay where they are: idofig applies `dx_mm
 after the layout is frozen, which a script cannot (the same move made in the script is
 absorbed by the constrained layout, and the bytes change), and a letter is drawn when the
 figure is composed, never by the script.
+
+## Building a figure that stays editable
+
+A figure stays editable when every later adjustment can be written as a small named delta in
+a plain file, not as a change to the script. Build it so:
+
+1. **One directory per figure.** `figures/<id>/` holds figure.json, its producer scripts and
+   `panels/<panel>/`. Data comes from `results/` (declared in `inputs`), never computed here.
+2. **Draw each panel at its printed size.** `idf.panels(...)` makes the figure the size of its
+   `place`; never set `figsize`, never `savefig`, never scale fonts to fit.
+3. **Name everything a person might want to refine.** `idf.name(ax, "dose")` for every axes
+   (a group of axes shares a dotted prefix: `row1.brain.view0` … `view3`, so `row1.brain.*`
+   addresses them all), `label=` on every series, `gid=` on free text and anything else, and
+   `idf.colorbar(..., name=)`. Unnamed parts get positional names that break when the drawing
+   changes.
+4. **Prefer `layout="constrained"`** (the default) when the spacing between axes should stay
+   adjustable: style.json `layout` spaces it in mm. Use `layout=None` with `idf.axes_mm` when
+   the geometry must be exact (image montages, aligned rows); those axes are still movable
+   by name.
+5. **Keep geometry in named constants** at the top of the script (`BAR_X`, `ROW_PITCH`), so a
+   settled refinement can be folded in later by changing one number.
+
+### The refinement ladder
+
+Take the first rung that does the job; each lives in a file the build applies, and each
+survives new data:
+
+| rung | where | for |
+|---|---|---|
+| 1. restyle or nudge a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend | a label, a title, a legend in the wrong place |
+| 2. space the axes | `style.json` `layout` (`hspace_mm`, `wspace_mm`, `pad_mm`) | gaps in a constrained panel |
+| 3. crop the empty margin | `style.json` `trim` / `trim_mm` | white space around the ink |
+| 4. move an axes or a group of axes | `style.json` `dx_mm`/`dy_mm` on its name or a pattern (`*.regions`) | rearranging within a panel, closing a gap in a `layout=None` panel |
+| 5. place the panels | `figure.json` `panels[].place`, `letter_offset_mm`, `annotations` | the composition |
+| 6. split a panel | two panels in figure.json, each drawn by the producer | parts that should move independently of everything |
+| 7. bake it into the script | change the script's constants, delete the style.json entries, rebuild, compare panel.svg | a refinement that is settled for good (optional; a person or an agent does it, never an application) |
+
+### Never
+
+* edit panel.svg, manifest.json, figure.svg or figure.lock.json (they are built);
+* rewrite a script to apply a refinement a file can hold (an application never edits a script);
+* resize a panel's figure in the script, call `tight_layout()` or `savefig()`;
+* store a derived number (a panel's fitted size, a figure number) anywhere;
+* let a part's name depend on drawing order when a label, a text or a gid can name it.
