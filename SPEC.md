@@ -233,7 +233,7 @@ then single parts — the most specific wins. Properties by part kind:
 | patch | facecolor, edgecolor, color, linewidth, linestyle, alpha, visible, hatch |
 | collection | facecolor, edgecolor, color, linewidth, alpha, visible, size, cmap, vmin, vmax |
 | image | alpha, visible, cmap, vmin, vmax |
-| axes | facecolor, visible, dx_mm, dy_mm |
+| axes | facecolor, visible, dx_mm, dy_mm, scale (0.25–4), rotate (−180–180, degrees) |
 | axis | visible, tickdir (in\|out\|inout), ticklength (pt), tickwidth (pt) |
 | spine | visible, linewidth, color |
 | legend | visible, loc, frameon, fontsize, title, dx_mm, dy_mm |
@@ -286,10 +286,40 @@ for a text with a gid of its own — is not moved again: `main.*` moves main and
 together, once. Works the same on a panel placed by hand (`layout=None`, `axes_mm`) and on a
 constrained one; in the latter the engine does not make room (it has laid the panel out
 already), so a moved axes may overlap a neighbour, which `trim` and the ink check see where
-it now is. The manifest's boxes, `trim` and compose's fit all measure the moved axes. An axes
-is moved, never resized: its size is the script's (panels are never scaled). The script is
+it now is. The manifest's boxes, `trim` and compose's fit all measure the moved axes. A move
+never resizes an axes (that is `scale`, below; the panel itself is never scaled). The script is
 never rewritten; to fold a settled move into it, change its constants, delete the entries,
 rebuild, and compare the panel.
+
+**Scaling and rotating an axes, or a group of axes (0.7.0).** `scale` (a uniform factor, 0.25
+to 4, default 1) and `rotate` (degrees, −180 to 180, default 0; positive turns clockwise on the
+page, as SVG's `rotate` does in its y-down space) on an `axes` part scale and turn it and
+everything drawn in it — what `dx_mm`/`dy_mm` would move with it: tick marks and labels, axis
+labels, title, legend, images, texts, lines, patches and collections, and its clipping. They
+are one transform on the axes' group in panel.svg, `transform="matrix(a b c d e f)"` on its
+`<g id="<name>">`, about the centre of the axes' box as the save drew it — after the layout,
+after its locator and after its own `dx_mm`/`dy_mm` —
+
+    M = translate(cx, cy) ∘ rotate(rotate) ∘ scale(scale) ∘ translate(−cx, −cy)
+
+in the panel's points, y down (a point is scaled about the centre, then turned; a uniform
+scale and a turn about one point commute, so the order is stated, not load-bearing). Its twins
+(`twinx`) share its box and its group's transform, taken from the first of them whose values
+are not identity. A colorbar is an axes of its own and is not turned with the axes it
+belongs to: name both (`cov` and `cbar.cov`, or a pattern) to turn both, each about its own
+centre. A 3D axes takes them as any other (the transform is on the drawn group, not on its
+projection). Nothing reflows: the layout is not re-run, so a scaled axes may overlap a
+neighbour, which `trim`, the ink check and compose's fit see where it now is. On a group or
+pattern entry each axes it names is turned about its own centre, and a part drawn in one of
+them is turned once, with it (as for a move); a part the entry names outside those axes
+refuses the property (`'scale' is not a text property`). Identity (`scale` 1, `rotate` 0)
+writes nothing: the panel.svg is byte for byte the one without the entry. An axes that is not
+drawn has no group, and a scaled one whose group is not in panel.svg (a rasterized axes with
+a positional name, which matplotlib writes as one image with no id) gets a manifest warning,
+`<name>: scale/rotate had no effect: …`. The manifest (below) boxes every part drawn in the
+axes around its turned box, records the scale it prints at, and gives the axes' `frame` and
+`matrix`, so a canvas draws the turned frame and its handles; the checks read the size a part
+prints at (a 7 pt label in an axes at `scale` 0.8 is a 5.6 pt label).
 
 All of this lasts one save. Once the panel is written, the script's figure is as it was —
 its layout engine, its titles' and legends' placement and anchors, each part where the script put it —
@@ -344,8 +374,8 @@ one, like any part that is not drawn, has no id in the SVG.
 ## manifest.json — schema 1
 
 `{schema, figure, panel, render, size{w_pt,h_pt,w_mm,h_mm}, trim?{x_pt,y_pt,w_pt,h_pt}, parts{name: {kind, role,
-stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, base?}}, axes{name: {bbox, xscale, yscale,
-xlim, ylim}}, style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
+stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, effective_scale?, base?}}, axes{name: {bbox,
+frame?, matrix?, xscale, yscale, xlim, ylim}}, style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
 the idofig that drew the panel (absent: 0.2.x). `trim` (a trimmed panel only) is the crop in
 the drawn panel's points; every `bbox` of such a panel, a part's or an axes', is then
 measured from the crop's corner — the frame compose places at the panel's place — so a
@@ -388,8 +418,22 @@ size a script took from data with a gap, the limits of an all-NaN image) is `nul
 sizes, an ellipse's axes, a quiver's arrows) at the size they print at, not the size the raster
 pass (at `savefig.dpi`) left them. `base` holds the
 values the script drew before the overrides, for the properties overridden and read back
-(for an offset, 0); a script that saves twice keeps its own values there, unless it set a
+(for an offset, 0; for `scale` 1 and `rotate` 0); a script that saves twice keeps its own values there, unless it set a
 value again between the saves.
+
+**A scaled or rotated axes (0.7.0).** An axes' `props` carry its `scale` and `rotate`. Every
+part drawn in an axes that is scaled or turned (the axes itself, its twins' parts, an inset's) has
+its `bbox` as the axis-aligned box around its box mapped by the axes' matrix (a turned label's
+box is the box around its turned box, not its ink), and, when the scale is not 1,
+`effective_scale`: the scale it prints at, by which the size and stroke checks multiply its
+`fontsize`, `linewidth`, `thinnest_pt` and `tickwidth` (its `props` stay the values set). Its
+`axes` entry's `bbox` is the box around the turned frame; `frame` is the frame before the
+transform and `matrix` the SVG matrix `[a, b, c, d, e, f]` that maps it, both in the same
+points as `bbox` (a trimmed panel's measured from the crop's corner, so the matrix differs from
+panel.svg's by the crop's offset): a canvas draws the turned frame as `matrix` applied to
+`frame`'s corners and its centre is `frame`'s centre. A `{panel, axes, data}` anchor is placed
+in `frame` and mapped by `matrix`, so it stays on its data point. Absent, all three mean
+identity, as every manifest before 0.7.0.
 
 ## figure.lock.json — schema 1
 
@@ -500,6 +544,11 @@ passes.
 | panel letters smaller than the journal's `minFontPt` | `check`, the server's `rules` | `fig-1: panel letters are 4 pt; Nature requires at least 5 pt` |
 | a drawn stroke — a line (not a markers-only one), spine, patch (not one whose edge has no line style), collection (its `thinnest_pt` when its marks differ in width) or an axis' major tick marks (its `tickwidth`) — thinner than the journal's `lineWeightPt.min` | `check`, the server's `rules` | `fig-1/a: main.series.links is 0.2 pt wide; Nature states at least 0.25 pt` |
 | a drawn text larger than the journal's `maxFontPt` | `check`, the server's `rules` | `fig-1/a: main.title is 9 pt; Nature states at most 7 pt` |
+
+Sizes and widths are the ones printed: a part with an `effective_scale` (drawn in a scaled axes,
+see manifest.json) is checked at its `fontsize`, `linewidth`, `thinnest_pt` or `tickwidth`
+times that scale, and reported at it (`main.xlabel is 5.6 pt` for a 7 pt label at `scale`
+0.8); the ink check reads the transformed boxes.
 
 One rule is not advisory: it is an error, and `check` fails on it.
 

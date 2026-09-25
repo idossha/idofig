@@ -735,6 +735,9 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
 
         for name, part in parts.items():
             box, props = part.get("bbox"), part.get("props") or {}
+            # Drawn in a scaled axes (0.7.0), a size and a stroke print at that scale: 7 pt at 0.8 is 5.6 pt.
+            es = part.get("effective_scale", 1)
+            eff = lambda v: None if v is None else round(v * es, 3)  # noqa: E731
             if part.get("kind") == "axis":
                 # No box, drawn or not: its major tick marks are its stroke while it is drawn and
                 # they have a length (`tickwidth: 0.1` passed Nature's 0.25 pt; an image axes' under
@@ -742,7 +745,7 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
                 # idofig's rc draws them at 0.75 × the major width, its defaults included.
                 if (current and part.get("drawn", True) and props.get("visible")
                         and (props.get("ticklength") or 0) > 0):
-                    thin(name, props.get("tickwidth"))
+                    thin(name, eff(props.get("tickwidth")))
                 continue
             if not box:  # not drawn, so it breaks no rule (a colorbar's dividers were stroke findings)
                 continue
@@ -751,7 +754,7 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
                 if out > _INK_TOLERANCE_MM:
                     breaks("ink", name, round(out, 2))
             if part.get("kind") == "text" and props.get("text"):
-                size = props.get("fontsize")
+                size = eff(props.get("fontsize"))
                 if size is not None and lo is not None and size < lo - 1e-6:
                     breaks("small", name, size)
                 if size is not None and hi is not None and size > hi + 1e-6:
@@ -764,7 +767,7 @@ def compliance(project: Project, fid: str, doc: dict) -> tuple[list[str], list[s
             if (part.get("kind") in ({"line", "spine", "patch", "collection"} if current else {"line", "spine"})
                     and props.get("linestyle") not in {"None", "none", "", " "}
                     and props.get("edgecolor", props.get("color")) not in {"none", "face"}):
-                thin(name, part.get("thinnest_pt", props.get("linewidth")))
+                thin(name, eff(part.get("thinnest_pt", props.get("linewidth"))))
         texts = {"ink": "{v} mm outside its panel's box{n}",
                  "small": "{v} pt{n}; {j} requires at least {lo:g} pt",
                  "large": "{v} pt{n}; {j} states at most {hi:g} pt",

@@ -136,6 +136,7 @@ Every refinement is a small named delta that survives the script being re-run:
 | a part's look | `style.json` (`fontsize`, `color`, …) | pt, … |
 | a text or legend part's position | `style.json` `dx_mm`, `dy_mm` | mm, y down |
 | an axes, or a group of axes, with everything drawn in it | `style.json` `dx_mm`, `dy_mm` on its name or a pattern (`row1.*`) | mm, y down |
+| an axes' size and angle, with everything drawn in it | `style.json` `scale` (0.25–4), `rotate` (−180–180, clockwise) on its name or a pattern | factor, degrees |
 | an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
 | the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |

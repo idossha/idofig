@@ -208,14 +208,19 @@ class _Anchors:
             ax = m.get("axes", {}).get(a["axes"])
             if ax is None:
                 return f"axes {a['axes']!r} is not in panel {pid!r} any more"
-            bx0, by0, bx1, by1 = ax["bbox"]
+            # A scaled or rotated axes (0.7.0): the point is placed in its frame, then turned with it.
+            bx0, by0, bx1, by1 = ax.get("frame") or ax["bbox"]
             fx = _frac(a["data"][0], ax["xlim"], ax["xscale"])
             fy = _frac(a["data"][1], ax["ylim"], ax["yscale"])
             if isinstance(fx, str):
                 return fx
             if isinstance(fy, str):
                 return fy
-            return ox + bx0 + fx * (bx1 - bx0) + dx, oy + by1 - fy * (by1 - by0) + dy
+            px, py = bx0 + fx * (bx1 - bx0), by1 - fy * (by1 - by0)
+            if "matrix" in ax:
+                ma, mb, mc, md, me, mf = ax["matrix"]
+                px, py = ma * px + mc * py + me, mb * px + md * py + mf
+            return ox + px + dx, oy + py + dy
         return ox + a["x"] * PT_PER_MM + dx, oy + a["y"] * PT_PER_MM + dy
 
 

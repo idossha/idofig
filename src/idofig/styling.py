@@ -89,6 +89,11 @@ def _offsets(artist: Any) -> dict:
     return {k: getattr(artist, f"_idofig_{k}", 0.0) for k in P.OFFSETS}
 
 
+def _transform(artist: Any) -> dict:
+    """An axes' scale and rotate: identity unless ``apply`` recorded one for this save."""
+    return {"scale": getattr(artist, "_idofig_scale", 1.0), "rotate": getattr(artist, "_idofig_rotate", 0.0)}
+
+
 def get_props(artist: Any, kind: str) -> dict:
     """Current values of the styleable properties (for the manifest and for 'was X in code').
 
@@ -152,7 +157,8 @@ def get_props(artist: Any, kind: str) -> dict:
             return {"alpha": _alpha(artist), "visible": artist.get_visible(), "cmap": artist.get_cmap().name,
                     "vmin": _num(vmin, 6), "vmax": _num(vmax, 6)}
         if kind == "axes":
-            return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible(), **_offsets(artist)}
+            return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible(), **_offsets(artist),
+                    **_transform(artist)}
         if kind == "axis":
             tick = artist.majorTicks[0]  # the tick every later one copies its settings from
             return {"visible": artist.get_visible(), "tickdir": tick.get_tickdir(),
@@ -203,7 +209,7 @@ def _all_stroke(coll: Any) -> bool:
 
 
 def _set(artist: Any, kind: str, key: str, value: Any) -> None:
-    if key in P.OFFSETS:  # recorded now, applied once the layout is frozen (apply_offsets)
+    if key in _MOVES:  # recorded now, applied once the layout is frozen (apply_offsets, axes_transforms)
         setattr(artist, f"_idofig_{key}", float(value))
     elif kind == "text":
         axis = _axis3d_of(artist) if key == "rotation" else None
@@ -341,6 +347,11 @@ def _movers(table: PartTable, names: list[str]) -> list[str]:
     return [n for n in names if not inside(n)]
 
 
+# What moves a part as a whole, with what is drawn in it: taken in the final pass, and on a group
+# or pattern entry by the parts not drawn in an axes the same entry moves (`_movers`).
+_MOVES = P.OFFSETS + P.TRANSFORMS
+
+
 def _specificity(pattern: str, table: PartTable) -> int:
     if "*" in pattern:
         return 0
@@ -361,13 +372,13 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
         good: dict[str, Any] = {}
         movers = _movers(table, names)
         for key, value in props.items():
-            if key in P.OFFSETS and not final:
+            if key in _MOVES and not final:
                 # Taken in the final pass, when every part has its role: before the draw, a tick
                 # label with a gid is not known to be one, and its offset got past the refusal.
                 continue
             problems = []
             for kind, role in {(table.parts[n].kind, table.parts[n].role)
-                               for n in (movers if key in P.OFFSETS else names)}:
+                               for n in (movers if key in _MOVES else names)}:
                 problems += P.validate(kind, {key: value}, group=group or len(names) > 1, role=role)
             if problems:
                 entry = {"part": pattern, "prop": key, "reason": "; ".join(sorted(set(problems)))}
@@ -386,7 +397,7 @@ def apply(table: PartTable, style: dict, report: StyleReport, *, final: bool) ->
                 # set, and is base again unless the script has set the property since.
                 earlier = artist.__dict__.setdefault("_idofig_base", {})
                 for key, value in good.items():
-                    if key in P.OFFSETS and name not in movers:
+                    if key in _MOVES and name not in movers:
                         continue
                     if key == "rotation" and not final and _axis3d_of(artist) is not None:
                         # The angle a 3D axis turns its label to is known once drawn (read before,
@@ -427,7 +438,7 @@ def forget_offsets(table: PartTable) -> None:
     script draws it."""
     for part in table.parts.values():
         for artist in part.artists:
-            for key in P.OFFSETS:
+            for key in _MOVES:
                 vars(artist).pop(f"_idofig_{key}", None)
 
 
@@ -483,6 +494,40 @@ def _move_axes(ax, dx_in: float, dy_in: float, fig, undo: Undo, moved: set[int])
         t.set_axes_locator(None)
     w_in, h_in = fig.get_size_inches()
     ax._set_position(ax.get_position().translated(dx_in / w_in, dy_in / h_in), "both")  # its twins too
+
+
+def axes_transforms(fig) -> dict[int, tuple[Any, tuple[float, ...], float]]:
+    """``{id(ax): (ax, matrix, scale)}`` for every axes a style scales or rotates, its twins
+    included (they share its box, and take the first sibling's values that are not identity).
+    ``matrix`` is SVG's ``(a, b, c, d, e, f)`` in the panel's points, y down: translate to the
+    box's centre ∘ rotate (clockwise, as SVG turns in y down) ∘ scale ∘ translate back, the box
+    as the save drew it (after its layout, its locator and its ``dx_mm``/``dy_mm``). Read after
+    the save's draw; the transform is on the axes' group (``svgpost.transform_groups``)."""
+    w_pt, h_pt = fig.get_figwidth() * 72, fig.get_figheight() * 72
+    out: dict[int, tuple[Any, tuple[float, ...], float]] = {}
+    for ax in fig.axes:
+        if id(ax) in out:
+            continue
+        twins = ax._twinned_axes.get_siblings(ax)
+        values = next((v for t in twins if (v := _transform(t)) != {"scale": 1.0, "rotate": 0.0}), None)
+        if values is None:
+            continue
+        s, r = float(values["scale"]), math.radians(float(values["rotate"]))
+        box = ax.get_position()
+        cx, cy = (box.x0 + box.x1) / 2 * w_pt, h_pt - (box.y0 + box.y1) / 2 * h_pt
+        a, b, c, d = s * math.cos(r), s * math.sin(r), -s * math.sin(r), s * math.cos(r)
+        matrix = (a, b, c, d, cx - a * cx - c * cy, cy - b * cx - d * cy)
+        for t in twins:
+            out[id(t)] = (t, matrix, s)
+    return out
+
+
+def map_box(box: list[float], m: tuple[float, ...]) -> list[float]:
+    """The axis-aligned box around ``box`` ([x0, y0, x1, y1]) mapped by SVG matrix ``m``."""
+    a, b, c, d, e, f = m
+    xs = [a * x + c * y + e for x in (box[0], box[2]) for y in (box[1], box[3])]
+    ys = [b * x + d * y + f for x in (box[0], box[2]) for y in (box[1], box[3])]
+    return [round(min(xs), 3), round(min(ys), 3), round(max(xs), 3), round(max(ys), 3)]
 
 
 def _freeze(fig, undo: Undo) -> None:

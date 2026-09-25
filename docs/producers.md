@@ -127,7 +127,7 @@ survives new data:
 | 1. restyle or nudge a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend | a label, a title, a legend in the wrong place |
 | 2. space the axes | `style.json` `layout` (`hspace_mm`, `wspace_mm`, `pad_mm`) | gaps in a constrained panel |
 | 3. crop the empty margin | `style.json` `trim` / `trim_mm` | white space around the ink |
-| 4. move an axes or a group of axes | `style.json` `dx_mm`/`dy_mm` on its name or a pattern (`*.regions`) | rearranging within a panel, closing a gap in a `layout=None` panel |
+| 4. move, scale or turn an axes or a group of axes | `style.json` `dx_mm`/`dy_mm`, `scale`, `rotate` on its name or a pattern (`*.regions`) | rearranging within a panel, closing a gap in a `layout=None` panel, a montage drawn a little too large or at a tilt |
 | 5. place the panels | `figure.json` `panels[].place`, `letter_offset_mm`, `annotations` | the composition |
 | 6. split a panel | two panels in figure.json, each drawn by the producer | parts that should move independently of everything |
 | 7. bake it into the script | change the script's constants, delete the style.json entries, rebuild, compare panel.svg | a refinement that is settled for good (optional; a person or an agent does it, never an application) |

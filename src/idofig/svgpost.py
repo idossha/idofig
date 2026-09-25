@@ -16,6 +16,25 @@ _METADATA = re.compile(r"\s*<metadata>.*?</metadata>", re.S)
 _ROOT = re.compile(r"<svg\b([^>]*)>")
 
 
+def _num(v: float) -> str:
+    """A matrix entry, fixed to 6 places without trailing zeros (the same number, the same bytes)."""
+    text = f"{v:.6f}".rstrip("0").rstrip(".")
+    return "0" if text in {"-0", ""} else text
+
+
+def transform_groups(svg: str, matrices: dict[str, tuple[float, ...]]) -> tuple[str, list[str]]:
+    """Put ``transform="matrix(…)"`` on the first ``<g id="<name>">`` of each name (an axes'
+    group, which holds everything drawn in it); returns the SVG and the names not found."""
+    missing = []
+    for name, m in matrices.items():
+        tag = f'<g id="{name}">'
+        if tag not in svg:
+            missing.append(name)
+            continue
+        svg = svg.replace(tag, f'<g id="{name}" transform="matrix({" ".join(map(_num, m))})">', 1)
+    return svg, missing
+
+
 def finish_panel_svg(svg: str, *, panel: str, roles: dict[str, str]) -> str:
     svg = _DECL.sub("", svg)
     svg = _DOCTYPE.sub("", svg)

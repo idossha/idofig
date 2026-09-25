@@ -353,15 +353,43 @@ def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
-def _axes_info(ax, renderer, height_pt: float) -> dict:
+def _axes_info(ax, renderer, height_pt: float, mats: dict) -> dict:
     box = _bbox(ax, renderer, height_pt) or [0, 0, 0, 0]
-    return {
+    info = {
         "bbox": box,
         "xscale": ax.get_xscale(),
         "yscale": ax.get_yscale(),
         "xlim": [float(v) for v in ax.get_xlim()],
         "ylim": [float(v) for v in ax.get_ylim()],
     }
+    if id(ax) in mats and box[2] > box[0]:
+        # Scaled or rotated (0.7.0): `bbox` is the box around the turned frame; `frame` is the
+        # frame before the turn and `matrix` maps it (and a data point placed in it) to the panel.
+        from .styling import map_box
+
+        m = mats[id(ax)][1]
+        info.update(bbox=map_box(box, m), frame=box, matrix=[round(v, 6) for v in m])
+    return info
+
+
+def _host_transform(part, table, mats: dict):
+    """The (matrix, scale) of the scaled or rotated axes a part is drawn in, or None: the part's
+    own axes (an axes' is itself), else its parent's, walked up (a legend's texts have none),
+    and an inset's parent axes (its group is inside its parent's)."""
+    artist = part.artists[0]
+    ax = artist if part.kind == "axes" else getattr(artist, "axes", None)
+    parent = part.parent
+    while ax is None and parent in table.parts:
+        up = table.parts[parent]
+        ax = up.artists[0] if up.kind == "axes" else getattr(up.artists[0], "axes", None)
+        parent = up.parent
+    while ax is not None:
+        if id(ax) in mats:
+            return mats[id(ax)][1:]
+        if ax.axes is ax:
+            return None
+        ax = ax.axes
+    return None
 
 
 def _ships_with_matplotlib(path: str) -> bool:
@@ -507,6 +535,7 @@ def _instrument(table, undo) -> None:
 def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str]:
     from . import naming, styling
     from .build import RENDER
+    from . import svgpost
     from .svgpost import finish_panel_svg
 
     style_path = ctx.project.panel_dir(ctx.figure_id, pid) / "style.json"
@@ -533,14 +562,20 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
             styling.apply_offsets(fig, moves, undo)
         _instrument(table, undo)
         svg_text = _svg(fig)
+        mats = styling.axes_transforms(fig)
+        svg_text, unplaced = svgpost.transform_groups(
+            svg_text, {table.axes_names[k]: m for k, (_, m, _) in mats.items()
+                       if k in table.axes_names and table.parts[table.axes_names[k]].artists[0]._idofig_drawn})
         width_pt = fig.get_figwidth() * PT_PER_IN
         height_pt = fig.get_figheight() * PT_PER_IN
         # Boxes are in the SVG's units, points, at 72 dpi whatever the figure's: measured at a
         # producer's `set_dpi(300)`, every box was 300/72 too large, far outside the panel.
         undo.set(fig, "dpi", 72)
-        parts, axes, roles = _measure(fig, table, sreport, height_pt)
+        parts, axes, roles = _measure(fig, table, sreport, height_pt, mats)
 
     warnings = list(table.warnings) + layout_warnings + _check_fonts(table)
+    warnings += [f"{name}: scale/rotate had no effect: its group is not in panel.svg (a rasterized axes "
+                 f"with a positional name); name it" for name in unplaced]
     trim = None
     if style.get("trim", "trim_mm" in style):  # trim_mm alone turns it on; trim: false keeps it off
         trim = _trim(parts, axes, width_pt, height_pt, style.get("trim_mm", 0.0) * PT_PER_MM)
@@ -595,15 +630,21 @@ def _trim(parts: dict, axes: dict, width_pt: float, height_pt: float, margin_pt:
     r = lambda v: round(float(v), 3)  # noqa: E731
     x0, y0 = r(x0), r(y0)
     for entry in [*parts.values(), *axes.values()]:
-        b = entry.get("bbox")
-        if b:
-            entry["bbox"] = [r(b[0] - x0), r(b[1] - y0), r(b[2] - x0), r(b[3] - y0)]
+        for key in ("bbox", "frame"):
+            b = entry.get(key)
+            if b:
+                entry[key] = [r(b[0] - x0), r(b[1] - y0), r(b[2] - x0), r(b[3] - y0)]
+        if "matrix" in entry:  # measured from the crop's corner too: T(-x0, -y0) ∘ M ∘ T(x0, y0)
+            a, b, c, d, e, f = entry["matrix"]
+            entry["matrix"] = [a, b, c, d, round(e + a * x0 + c * y0 - x0, 6), round(f + b * x0 + d * y0 - y0, 6)]
     return {"x_pt": x0, "y_pt": y0, "w_pt": r(x1 - x0), "h_pt": r(y1 - y0)}
 
 
-def _measure(fig, table, sreport, height_pt: float) -> tuple[dict, dict, dict]:
+def _measure(fig, table, sreport, height_pt: float, mats: dict) -> tuple[dict, dict, dict]:
     """The manifest's parts and axes, measured on the figure the save just wrote (its offsets
-    still applied), and the roles the SVG marks."""
+    still applied), and the roles the SVG marks. A part drawn in a scaled or rotated axes is
+    boxed around its turned box (``mats``, from ``styling.axes_transforms``), and records the
+    scale it prints at (``effective_scale``), which the size and stroke checks multiply by."""
     import numpy as np
 
     from . import props as P
@@ -629,6 +670,12 @@ def _measure(fig, table, sreport, height_pt: float) -> tuple[dict, dict, dict]:
             artist = part.artists[0]
             entry["bbox"] = (_bbox(artist, renderer, height_pt, clipped=part.kind == "text")
                              if artist._idofig_drawn else None)
+            host = _host_transform(part, table, mats) if mats else None
+            if host is not None:
+                if entry["bbox"]:
+                    entry["bbox"] = styling.map_box(entry["bbox"], host[0])
+                if host[1] != 1:
+                    entry["effective_scale"] = round(host[1], 6)
             if part.kind == "axis" and not artist._idofig_drawn:
                 # An axis has no box, drawn or not, so this says it was not (an axes turned off
                 # with axis("off"), a hidden axes): its tick marks were held to the line weight.
@@ -652,7 +699,7 @@ def _measure(fig, table, sreport, height_pt: float) -> tuple[dict, dict, dict]:
     for ax in fig.axes:
         an = table.axes_names.get(id(ax))
         if an:
-            axes[an] = _axes_info(ax, renderer, height_pt)
+            axes[an] = _axes_info(ax, renderer, height_pt, mats)
     return parts, axes, roles
 
 

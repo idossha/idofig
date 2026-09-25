@@ -144,6 +144,10 @@ _OFFSET = _num(-100, 100, "mm")
 # is frozen (``styling.apply_offsets``), so the part lands exactly that far away. An axes moves
 # with everything drawn in it (0.6.0).
 OFFSETS = ("dx_mm", "dy_mm")
+# An axes' uniform scale and clockwise turn (degrees) about its box's centre, applied after its
+# move as one transform on its group in panel.svg, to everything drawn in it (0.7.0). Identity
+# (1, 0) writes nothing.
+TRANSFORMS = ("scale", "rotate")
 TICK_MARKS = ("tickdir", "ticklength", "tickwidth")
 
 PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
@@ -165,7 +169,8 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
         "visible": _bool, "size": _num(0, 10000), "cmap": _cmap, "vmin": _num(), "vmax": _num(),
     },
     "image": {"alpha": _ALPHA, "visible": _bool, "cmap": _cmap, "vmin": _num(), "vmax": _num()},
-    "axes": {"facecolor": _color, "visible": _bool, "dx_mm": _OFFSET, "dy_mm": _OFFSET},
+    "axes": {"facecolor": _color, "visible": _bool, "dx_mm": _OFFSET, "dy_mm": _OFFSET,
+             "scale": _num(0.25, 4), "rotate": _num(-180, 180, "deg")},
     "axis": {"visible": _bool, "tickdir": _enum({"in", "out", "inout"}), "ticklength": _WIDTH, "tickwidth": _WIDTH},
     "spine": {"visible": _bool, "linewidth": _WIDTH, "color": _color},
     "legend": {
