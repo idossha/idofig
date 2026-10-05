@@ -308,9 +308,12 @@ axes background or legend frame named by a gid, whose group now carries its role
 (`data-idofig-role`, see Part names), or a legend named by a gid, whose frame, entries and
 title are now named after it; or unless its script changes the figure's size after
 `idofig.panels()`: it is now saved at its place size (see Determinism), where 0.2.2 saved it
-at the script's size and compose warned that it was drawn at another. `tests/golden/` holds such a panel, whose panel.svg is
-0.2.2's to the byte, and a test checks under any matplotlib that the draws a save wraps
-(tracking what was drawn, naming rasterized parts) add no byte.
+at the script's size and compose warned that it was drawn at another; or unless (0.10.0) it
+draws bars, a scatter, a marker line or a grid, whose elements gain data attributes, mark ids
+and gridline names (manifest.json, *Data*) — nothing is drawn differently. `tests/golden/`
+holds such a panel, whose panel.svg is 0.2.2's to the byte but for its three bars' data
+attributes, and a test checks under any matplotlib that the draws a save wraps (tracking what
+was drawn, naming rasterized parts) add no byte.
 
 **Tick marks.** `tickdir` sets the direction of an axis' major and minor tick marks;
 `ticklength` and `tickwidth` set its major ones. They are applied with `tick_params` before
@@ -332,6 +335,20 @@ See `src/idofig/naming.py` for the grammar. Stability classes, recorded per part
 * `positional` — derived from order (`main.line0`, one bar of a series). Survives only while
   the drawing keeps its structure; the manifest says so.
 
+**Gridlines, bar series, marks (0.10.0).** A drawn major gridline is named after its tick's
+label (its value when the tick has none): `main.xgrid.0-5`, role `gridline`, `semantic`, in the
+group `main.xgrid.*` (role `grid`), and takes a line's properties. One that is not drawn (no
+grid) is not named, so its panel keeps its bytes; a 3D axis' grid is not named. An unlabelled
+bar container (`ax.bar(x, h)`, `ax.hist(v)`) is the group `main.bars0`, `main.bars1`, … in the
+order the axes holds them (role `series`, `positional`) over its bars, which keep their names
+(`main.patch3`); a labelled one was already the group `main.series.<label>`. A pattern such as
+`main.*` matches the gridlines, as it matches the tick labels. A scatter's or a marker line's
+marks are not parts: in panel.svg the mark of data index *i* is `<part>.<i>` (manifest.json,
+*Data*), `positional` — an index names it, so a new point before it renumbers it — and no
+style.json entry addresses one (it would be detached). A bar's index is positional too
+(`main.series.control.0`); its category, where it has one, is `data-key`, which survives a
+reordering and is what a consumer matches bars across two builds on.
+
 A 3D axes' z axis is named like the other two (`main.zlabel`, `main.zaxis`, `main.ztick.<text>`);
 its axes have the role `axis3d`. A 3D axis draws its pane and grid in groups of their own,
 which carry no id, so each part's id is in the SVG once.
@@ -346,8 +363,9 @@ one, like any part that is not drawn, has no id in the SVG.
 ## manifest.json — schema 1
 
 `{schema, figure, panel, render, size{w_pt,h_pt,w_mm,h_mm}, trim?{x_pt,y_pt,w_pt,h_pt}, parts{name: {kind, role,
-stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, effective_scale?, base?}}, axes{name: {bbox,
-frame?, matrix?, xscale, yscale, xlim, ylim}}, style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
+stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, effective_scale?, base?, data?, series?}},
+axes{name: {bbox, frame?, matrix?, xscale, yscale, xlim, ylim, anchors?, categories?}}, build[{stage, parts, entrance}],
+style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
 the idofig that drew the panel (absent: 0.2.x). `trim` (a trimmed panel only) is the crop in
 the drawn panel's points; every `bbox` of such a panel, a part's or an axes', is then
 measured from the crop's corner — the frame compose places at the panel's place — so a
@@ -409,6 +427,62 @@ identity, as every manifest before 0.7.0. Since 0.9.0 every individual part also
 `frame` and, when transformed, `matrix`/`own_matrix`, as specified in Common artist geometry
 above. The same measurement rule applies through all actual SVG ancestor groups.
 
+**Data (0.10.0).** A part that is a line, a scatter or a bar series drawn in its axes' data
+coordinates carries `data`, what it drew, as matplotlib holds it after unit conversion (a
+category is its index, a date its day number); a value that is not finite is `null`:
+
+| `kind` | from | fields |
+|---|---|---|
+| `line` | a `Line2D` with a line style (markers or not) | `n`, `x`, `y`, `addressable`/`why` when it has markers |
+| `points` | a `Line2D` with markers and no line, a scatter (`PathCollection`) | `n`, `x`, `y`, `values` (a scatter's colour-mapped `c`, when it has one per point), `addressable`, `why?` |
+| `bars` | a bar series group (`main.series.<label>`, `main.bars<k>`) | `n`, `orientation` (`vertical`\|`horizontal`), `positions` (each bar's centre on its category axis), `values` (signed height, or width), `baselines`, `keys?` |
+
+`keys` is each bar's category when every bar is centred on a category of a categorical axis
+and no two share one (bars offset from their category by hand have none). A line drawn partly
+in axes coordinates (`axhline`), a 3D line, fills, images and meshes have no `data`; an
+errorbar's data line and caps are lines of its group and carry their own. **Size cap:** a series stores at
+most `DATA_CAP` = 1000 values; past it, `x`/`y`/`values` (or a bar series' arrays) are left
+out, `omitted` says so (`"5000 values; the manifest stores at most 1000"`), and `x_range`,
+`y_range` give the finite minimum and maximum. Nothing is truncated: a series has all its
+values or none.
+
+`addressable: true` means panel.svg gives the mark of each finite point *i* the id
+`<part>.<i>` and `data-index="i"` (and `data-value` when the series has `values`); `false`
+leaves the series one group and `why` says why: more than 1000 marks, rasterized, its group
+not in panel.svg, an id taken, or `panel.svg draws 3 marks for its 4 points` — matplotlib skips
+a mark it cannot place (a value ≤ 0 on a log axis), and a count that does not match is never
+guessed at. A mark far outside the view is still drawn, clipped, and keeps its id. A bar
+series' bars carry, on their own `<g>`, `data-index` (the bar's index in its container),
+`data-value` and `data-key`.
+
+A legend entry made from the axes' labelled artists (`ax.legend()`, `fig.legend()`) carries
+`series`: the part (or group) its handle is. The join is by artist — the entry's handle is the
+artist in the same place of `get_legend_handles_labels()`, used only when the legend's texts
+are those labels one for one — never by text: a legend of hand-picked handles has no `series`.
+
+**Anchors (0.10.0).** An axes of a flat projection gives, per linear or log axis, two
+`[data, point]` pairs read from matplotlib's data transform at its limits: `anchors: {x: [[x0,
+px0], [x1, px1]], y: [[y0, py0], [y1, py1]]}`, in the same points as `bbox` (y down, from the
+crop's corner when trimmed: add `trim`'s `x_pt`/`y_pt` for panel.svg's own coordinates) and
+before `matrix` (a turned axes' value is placed in `frame`, then mapped). A value `v` is at
+`p0 + (v − d0) / (d1 − d0) × (p1 − p0)` on a linear axis, the same in `log v` on a log one. A
+symlog, logit or function axis, and a polar or 3D axes, has no anchors for that axis.
+`categories: {x: ["sham", "low", "high"]}` names the category each value of a categorical axis
+stands for (value = index).
+
+**Build (0.10.0).** `build` is a hint for an application that reveals the panel step by step;
+idofig animates nothing. Each step names parts or groups of `parts` (a group expands to its
+`members`; a series with `addressable` marks expands to `<part>.<i>`), a `stage` and an
+`entrance`, in this order: one `scaffold` step (every axes' background, spines, axes, axis
+labels and titles, and the figure's suptitles), one `grid` step (the gridline groups), one
+`data` step per series or unnamed mark in the order matplotlib draws them (by axes, then
+zorder, then the order they were added), one `legend` step per legend or colorbar, and one
+`annotation` step per free text. Entrances are a closed vocabulary: `draw-on` (a line),
+`grow` (a bar series, from its `baselines`), `stagger` (addressable points, by `data-index`),
+`fade` (everything else). The figure's background, parts drawn inside a listed part (tick
+labels in an axis, a legend's entries, a colorbar's contents) and parts that are not drawn are
+in no step; what is drawn and unnamed is not in any step either, and stays visible throughout.
+
 ## figure.lock.json — schema 1
 
 `{schema, figure, producers{id: {run, files{path: sha256|null}, journal, discovered,
@@ -438,6 +512,13 @@ build fails`, and gives the same step. The lock does not see that upgrade, so th
 reads fresh; `check`, which runs the producer, then reports ``drawn by idofig 0.2.2 (render
 1); its producer now draws with render 2 — `idofig build --force <fig>` redraws it`` rather
 than "not reproducible".
+
+**Upgrading to 0.10.0.** Render 4: every panel is stale once. Bars, scatters, marker lines
+and drawn grids gain data attributes, mark ids and gridline names in panel.svg; nothing is
+drawn differently, no existing name changes, and a panel with none of them keeps its bytes.
+Manifests gain `data`, `series`, `anchors`, `categories` and `build`, and the gridline and
+`main.bars<k>` parts: a pattern such as `main.*` now also styles the gridlines, and the stroke
+check reads them (one finding for `main.xgrid.*`).
 
 **Upgrading to 0.9.0.** Render 3 rebuilds manifests with common geometry and composed
 artist boxes. Named images gain an outer SVG group enclosing their native transform and clipping;

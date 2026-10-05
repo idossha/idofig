@@ -10,7 +10,7 @@ figures/fig-dose/
   panels/dose/
     style.json         SOURCE  overrides on named parts (what a canvas writes)
     panel.svg          BUILT   the panel at its printed size
-    manifest.json      BUILT   every named part: kind, box, current values; axes data mapping
+    manifest.json      BUILT   every named part: kind, box, current values, drawn data; axes data mapping; build order
   figure.svg           BUILT   the composed figure (committed, so a clone is readable without tools)
   figure.lock.json     BUILT   what each panel was built from, so idofig knows what is stale
 ```
@@ -150,6 +150,31 @@ Every refinement is a small named delta that survives the script being re-run:
 marks, tick labels and legend entries. Their clipping follows their drawing. Existing text,
 legend and axes offsets retain their placement behavior; see SPEC.md for the precise pivot
 and nested-transform contract. The technical 3D axis tick-mark setter limitation remains.
+
+### Data for slides and agents (0.10.0)
+
+The manifest also says what the data marks drew, so an application can animate a plot as a
+plot, or answer a question about it, without matplotlib:
+
+* a line's, a scatter's or a marker line's `data` (`kind`, `n`, `x`, `y`, a colour-mapped
+  scatter's `values`) and a bar series' (`positions`, `values`, `baselines`, `orientation`,
+  and `keys` when the bars stand on a categorical axis's categories) — up to 1000 values a
+  series; past that, ranges and a sentence saying the values were left out;
+* each axes' `anchors`: two (data, point) pairs per linear or log axis, enough to place any
+  data value on the panel, and `categories` for a categorical axis;
+* each legend entry's `series`, joined by the artist it was made from, never by its text;
+* `build`: a default reveal order — every axes' scaffold, then the grid, then each data series
+  as matplotlib draws it, then legends and colorbars, then free text — with an entrance for
+  each step (`fade`, `draw-on`, `grow` from the baseline, `stagger`). idofig animates nothing.
+
+In panel.svg each bar carries `data-index`, `data-value` and `data-key`, and each mark of a
+scatter or a marker line gets its own id, `main.series.cells.3`, with `data-index` — when every
+finite point is drawn; otherwise the series stays one group and the manifest says why. Major
+gridlines are named after their tick (`main.xgrid.0-5`, group `main.xgrid.*`) and take styles
+like any line. See SPEC.md, *manifest.json*.
+
+Upgrading to 0.10.0 makes every panel stale once (render 4): bars, scatters, marker lines and
+grids gain their attributes and ids; nothing is drawn differently, and no name changes.
 
 Upgrading to 0.9.0 refreshes render-3 geometry metadata. Named images gain a stable outer
 SVG group containing their native flip and clipping, enabling correct first-edit previews.

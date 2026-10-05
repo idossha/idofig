@@ -2,7 +2,7 @@
   "schema": 1,
   "figure": "fig-1",
   "panel": "a",
-  "render": 3,
+  "render": 4,
   "size": {
     "w_pt": 249.449,
     "h_pt": 170.079,
@@ -483,7 +483,32 @@
         20.324,
         236.667,
         144.878
-      ]
+      ],
+      "data": {
+        "kind": "bars",
+        "n": 3,
+        "orientation": "vertical",
+        "positions": [
+          0.0,
+          1.0,
+          2.0
+        ],
+        "values": [
+          1.0,
+          2.0,
+          1.5
+        ],
+        "baselines": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "keys": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
     },
     "main.series.trend": {
       "kind": "line",
@@ -517,6 +542,20 @@
         "dy_mm": 0.0,
         "scale": 1.0,
         "rotate": 0.0
+      },
+      "data": {
+        "kind": "line",
+        "n": 3,
+        "x": [
+          0.0,
+          1.0,
+          2.0
+        ],
+        "y": [
+          1.2,
+          1.8,
+          1.6
+        ]
       }
     },
     "main.legend": {
@@ -602,7 +641,8 @@
         "dy_mm": 0.0,
         "scale": 1.0,
         "rotate": 0.0
-      }
+      },
+      "series": "main.series.trend"
     },
     "main.legend.control": {
       "kind": "text",
@@ -636,7 +676,8 @@
         "dy_mm": 0.0,
         "scale": 1.0,
         "rotate": 0.0
-      }
+      },
+      "series": "main.series.control"
     },
     "main.xtick.a": {
       "kind": "text",
@@ -1106,9 +1147,77 @@
       "ylim": [
         0.0,
         2.1
-      ]
+      ],
+      "anchors": {
+        "x": [
+          [
+            -0.54,
+            31.246
+          ],
+          [
+            2.5400000000000005,
+            246.449
+          ]
+        ],
+        "y": [
+          [
+            0.0,
+            144.878
+          ],
+          [
+            2.1,
+            14.096
+          ]
+        ]
+      },
+      "categories": {
+        "x": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
     }
   },
+  "build": [
+    {
+      "stage": "scaffold",
+      "parts": [
+        "main.background",
+        "main.title",
+        "main.xlabel",
+        "main.xaxis",
+        "main.ylabel",
+        "main.yaxis",
+        "main.spine.left",
+        "main.spine.right",
+        "main.spine.bottom",
+        "main.spine.top"
+      ],
+      "entrance": "fade"
+    },
+    {
+      "stage": "data",
+      "parts": [
+        "main.series.control"
+      ],
+      "entrance": "grow"
+    },
+    {
+      "stage": "data",
+      "parts": [
+        "main.series.trend"
+      ],
+      "entrance": "draw-on"
+    },
+    {
+      "stage": "legend",
+      "parts": [
+        "main.legend"
+      ],
+      "entrance": "fade"
+    }
+  ],
   "style": {
     "applied": [],
     "detached": [],

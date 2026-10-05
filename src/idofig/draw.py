@@ -357,6 +357,8 @@ def _union(boxes):
 
 
 def _axes_info(ax, renderer, height_pt: float, mats: dict) -> dict:
+    from . import marks
+
     box = _bbox(ax, renderer, height_pt) or [0, 0, 0, 0]
     info = {
         "bbox": box,
@@ -365,6 +367,13 @@ def _axes_info(ax, renderer, height_pt: float, mats: dict) -> dict:
         "xlim": [float(v) for v in ax.get_xlim()],
         "ylim": [float(v) for v in ax.get_ylim()],
     }
+    # Where data values sit (0.10.0): in `frame`'s points, like the box, before any `matrix`.
+    anchors = marks.anchors(ax, height_pt)
+    if anchors:
+        info["anchors"] = anchors
+    cats = {k: c for k, c in (("x", marks.categories(ax.xaxis)), ("y", marks.categories(ax.yaxis))) if c}
+    if cats:
+        info["categories"] = cats
     if id(ax) in mats and box[2] > box[0]:
         # Scaled or rotated (0.7.0): `bbox` is the box around the turned frame; `frame` is the
         # frame before the turn and `matrix` maps it (and a data point placed in it) to the panel.
@@ -522,7 +531,7 @@ def _instrument(table, undo) -> None:
 
 
 def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str]:
-    from . import naming, styling
+    from . import marks, naming, styling
     from .build import RENDER
     from . import svgpost
     from .svgpost import finish_panel_svg
@@ -540,6 +549,7 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         styling.apply(table, style, sreport, final=False)
         fig.canvas.draw()
         naming.assign_ticks(fig, table)
+        naming.legend_series(fig, table)
         styling.apply(table, style, sreport, final=True)
 
         moves = styling.offsets(table)
@@ -584,6 +594,8 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         if named_mats:
             walk(ET.fromstring(svg_text))
         parts, axes, roles = _measure(fig, table, sreport, height_pt, mats, hosts)
+        svg_text = marks.annotate(svg_text, table, parts)
+        build = marks.build_steps(fig, table, parts)
 
     warnings = list(table.warnings) + layout_warnings + _check_fonts(table)
     warnings += [f"{name}: scale/rotate had no effect: its group is not in panel.svg (a rasterized axes "
@@ -605,6 +617,7 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         **({"trim": trim} if trim else {}),
         "parts": parts,
         "axes": axes,
+        "build": build,
         "style": {"applied": sreport.applied, "detached": sreport.detached, "invalid": sreport.invalid},
         "warnings": warnings,
     }
@@ -652,6 +665,9 @@ def _trim(parts: dict, axes: dict, width_pt: float, height_pt: float, margin_pt:
         if "own_matrix" in entry:
             a, b, c, d, e, f = entry["own_matrix"]
             entry["own_matrix"] = [a, b, c, d, round(e + a * x0 + c * y0 - x0, 6), round(f + b * x0 + d * y0 - y0, 6)]
+        for axis, origin in (("x", x0), ("y", y0)):
+            if axis in entry.get("anchors", {}):
+                entry["anchors"][axis] = [[v, r(pt - origin)] for v, pt in entry["anchors"][axis]]
     return {"x_pt": x0, "y_pt": y0, "w_pt": r(x1 - x0), "h_pt": r(y1 - y0)}
 
 
@@ -710,6 +726,8 @@ def _measure(fig, table, sreport, height_pt: float, mats: dict, hosts: dict) -> 
                     entry["thinnest_pt"] = round(float(min(drawn)), 3)
             if part.role in {"background", "legend-frame"}:
                 roles[n] = part.role
+            if part.series:
+                entry["series"] = part.series
         if n in sreport.base:
             entry["base"] = sreport.base[n]
         parts[n] = entry

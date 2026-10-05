@@ -58,7 +58,8 @@ All under `src/idofig/`.
 |---|---|
 | `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
 | `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context`; `panels` selects the Agg backend unless it runs in a session, `save` draws on an Agg canvas of its own, lays a panel out, moves offset parts, keeps named rasterized parts' names, measures only what was drawn (with the SVG's text metrics, not Agg's), then puts back what it changed to write the panel (canvas, dpi, size, layout, placements, moves, wrapped draws); style overrides stay set on the script's figure |
-| `naming.py` | the part-naming grammar |
+| `naming.py` | the part-naming grammar; legend entries joined to their series by artist |
+| `marks.py` | what data marks drew (`data`), axes `anchors`/`categories`, mark ids and data attributes in panel.svg, the `build` hint (0.10.0) |
 | `styling.py`, `props.py` | style application and one capability registry: pre-layout styling, legacy post-layout offsets, common `axes_transforms`/`artist_transforms` matrices; `svgpost.transform_groups` applies them and `draw._measure` follows actual SVG ancestry. Validates finite geometry and unsupported setters; `css_color` normalizes colours |
 | `mplsetup.py`, `svgpost.py` | deterministic rc, bundled fonts, SVG post-processing |
 | `compose.py` | figure.json + panels → figure.svg (letters, image panels, annotations) |

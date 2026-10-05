@@ -15,17 +15,19 @@ must not change a byte of it. Which source draws it depends on why it is regener
       git archive <last release commit> src | tar -x -C /tmp/prev
       .venv/bin/python tests/golden/make_golden.py /tmp/prev/src
 
-  When that release is older than the commit that last bumped ``build.RENDER`` (0.3.0), that
+  When that release is older than the commit that last bumped ``build.RENDER`` (0.10.0), that
   commit's source instead (this checkout, until it is committed): the test compares the
   manifest byte for byte too, and an older render wrote other manifests (0.2.2 had no render
   number and wrote ``#000000`` for an edge drawn in no colour), which no working tree matches.
 
 It writes ``panel.svg``, ``manifest.json`` and ``versions.json`` (the idofig that drew them,
 and the matplotlib and numpy the bytes depend on) beside itself. The committed files were
-drawn by idofig 0.9.0 (render 3: common artist geometry metadata); its ``panel.svg`` is byte for byte
-the one 0.2.2 (commit 99a8790) drew, and 0.6.0, 0.7.0 and 0.8.0 changed only the manifest (an axes'
+drawn by idofig 0.10.0 (render 4: data semantics); its ``panel.svg`` is byte for byte the one
+0.2.2 (commit 99a8790) drew but for the ``data-index``/``data-value``/``data-key`` attributes
+0.10.0 puts on its three bars, and 0.6.0, 0.7.0 and 0.8.0 changed only the manifest (an axes'
 props gained ``dx_mm``/``dy_mm``, then ``scale``/``rotate``; a legend's, ``rotate``).
-0.9.0 adds common geometry/frame metadata; the unedited SVG remains byte-identical.
+0.9.0 added common geometry/frame metadata; 0.10.0 adds ``data``, ``series``, ``anchors``,
+``categories`` and ``build`` to the manifest.
 """
 
 from __future__ import annotations

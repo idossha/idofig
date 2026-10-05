@@ -21,7 +21,7 @@ L 31.246138 14.096431
 z
 " style="fill: #ffffff"/>
    </g>
-   <g id="main.series.control.0">
+   <g id="main.series.control.0" data-index="0" data-value="1.0" data-key="A">
     <path d="M 41.028068 144.878305 
 L 96.924805 144.878305 
 L 96.924805 82.601222 
@@ -29,7 +29,7 @@ L 41.028068 82.601222
 z
 " clip-path="url(#p9e0276ae57)" style="fill: #0072b2"/>
    </g>
-   <g id="main.series.control.1">
+   <g id="main.series.control.1" data-index="1" data-value="2.0" data-key="B">
     <path d="M 110.89899 144.878305 
 L 166.795728 144.878305 
 L 166.795728 20.32414 
@@ -37,7 +37,7 @@ L 110.89899 20.32414
 z
 " clip-path="url(#p9e0276ae57)" style="fill: #0072b2"/>
    </g>
-   <g id="main.series.control.2">
+   <g id="main.series.control.2" data-index="2" data-value="1.5" data-key="C">
     <path d="M 180.769912 144.878305 
 L 236.66665 144.878305 
 L 236.66665 51.462681 

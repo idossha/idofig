@@ -53,7 +53,8 @@ LOCK_SCHEMA = 1
 # `run` may name an interpreter with its own), and `builder_render`, the builder's. Drawn under
 # another number, a panel is stale only while its builder's differs too; otherwise the producer's
 # own idofig drew it, and a rebuild changes nothing (stale, it was rebuilt forever): a warning.
-RENDER = 3
+# 3, 0.9.0: common artist geometry. 4, 0.10.0: data attributes on bars and marks, named gridlines.
+RENDER = 4
 
 
 def drawn_under(manifest: dict) -> int:

@@ -4,6 +4,39 @@ What changed for people who make figures with idofig, newest first. The format f
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow `src/idofig/_version.py`.
 Releases before 0.7.0 are described in their commit messages (`git log`) and in SPEC.md.
 
+## [0.10.0] — unreleased
+
+### Added
+
+- **A panel's manifest says what its data marks drew, so slides can build a plot as a plot.**
+  A line's, a scatter's and a bar series' parts carry `data` — x and y, a scatter's colour
+  values, a bar's position, value, baseline and category — up to 1000 values a series; a
+  larger series says the values were left out and gives their range instead. Each axes gives
+  two data-to-point `anchors` per linear or log axis (and its `categories`), enough to place
+  any value on the panel without matplotlib. Each legend entry names the `series` it stands
+  for, joined by the artist it was made from, not by its text. A `build` list gives a default
+  reveal order — axes, then grid, then each series in the order matplotlib draws it, then
+  legends and colorbars, then free text — with an entrance for each step (`draw-on`, `grow`,
+  `stagger`, `fade`). Read it in any `manifest.json`, or through the server's `workspace` and
+  `parts`; nothing in `figure.json` or `style.json` changes.
+- **Bars and points are addressable one by one in panel.svg.** Each bar carries `data-index`,
+  `data-value` and, on a categorical axis, `data-key`; each mark of a scatter or a marker line
+  gets its own id (`main.series.cells.3`) with `data-index` when every point is drawn — when
+  matplotlib skips one (a value ≤ 0 on a log axis) or a series has more than 1000, the series
+  stays one group and the manifest says why. These ids are positional: a point inserted
+  before another renumbers it; a bar's `data-key` does not.
+- **Gridlines have names** (`main.xgrid.0-5`, all of them `main.xgrid.*`), so a grid can be
+  restyled, or revealed after its axes. An unlabelled bar container is now the group
+  `main.bars0` over its bars.
+
+### Changed
+
+- Upgrading makes every panel stale once (render 4). A panel with bars, points or a grid gains
+  the attributes and ids above; nothing is drawn differently, no existing part is renamed, and
+  a panel with none of them keeps its bytes. A broad pattern such as `main.*` in style.json now
+  also reaches the gridlines, and `check` holds a drawn grid to the journal's line weight (one
+  finding for `main.xgrid.*`).
+
 ## [0.9.0] — unreleased
 
 ### Added

@@ -13,6 +13,9 @@ titles, axis labels                   ``main.title``, ``main.xlabel``, ``main.yl
 a labelled line/scatter/bar series    ``main.series.<label>``                          semantic
 one bar of a labelled bar series      ``main.series.<label>.<row>``                    positional
 tick labels                           ``main.xtick.<text>``                            semantic
+drawn major gridlines (0.10.0)        ``main.xgrid.<tick text>``, group                semantic
+                                      ``main.xgrid.*``
+an unlabelled bar container (0.10.0)  ``main.bars0`` (a group over its bars)            positional
 legend and its entries                ``main.legend``, ``main.legend.<label>``         semantic
 spines, axis, background              ``main.spine.left``, ``main.xaxis``,             semantic
                                       ``main.background``
@@ -95,6 +98,8 @@ class Part:
     parent: str | None = None
     group: bool = False
     members: list[str] = field(default_factory=list)
+    container: Any = None  # the BarContainer a bar series group is (its values: marks.py)
+    series: str | None = None  # a legend entry's: the series its handle is (legend_series)
 
 
 class PartTable:
@@ -296,9 +301,9 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
             key = slug(lab)
             if key not in series:
                 order.append(key)
-            series.setdefault(key, []).append(("container", members))
+            series.setdefault(key, []).append(("container", members, c))
     singles = [*ax.lines, *ax.collections, *ax.patches, *ax.images]
-    claimed_by_container = {id(m) for runs in series.values() for kind, ms in runs for m in ms}
+    claimed_by_container = {id(m) for runs in series.values() for _, ms, _ in runs for m in ms}
     for artist in singles:
         if t.claimed(artist) or id(artist) in claimed_by_container:
             continue
@@ -307,7 +312,7 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
             key = slug(lab)
             if key not in series:
                 order.append(key)
-            series.setdefault(key, []).append(("artist", [artist]))
+            series.setdefault(key, []).append(("artist", [artist], None))
 
     for key in order:
         runs = series[key]
@@ -316,13 +321,15 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
             t.add(base, runs[0][1][0], "series", "semantic", p)
             continue
         members: list[str] = []
-        flat = [m for _, ms in runs for m in ms]
+        flat = [m for _, ms, _ in runs for m in ms]
         for row, artist in enumerate(flat):
             n = t.add(f"{base}.{row}", artist, "mark", "positional", base)
             if n:
                 members.append(n)
         t.add_group(base, members, "series", "semantic", p)
-        if sum(1 for kind, _ in runs if kind == "artist") > 1 or len(runs) > 1:
+        if base in t and len(runs) == 1 and isinstance(runs[0][2], BarContainer):
+            t.parts[base].container = runs[0][2]
+        if sum(1 for kind, _, _ in runs if kind == "artist") > 1 or len(runs) > 1:
             t.warnings.append(f"{len(runs)} artists in axes {p!r} share the label {key!r}; they are one group")
 
     counters = {"line": 0, "collection": 0, "patch": 0, "image": 0}
@@ -342,6 +349,17 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
                 if k in counters:
                     t.add(f"{p}.{prefix[k]}{counters[k]}", artist, k, "positional", p)
                     counters[k] += 1
+    # An unlabelled bar container (`ax.bar(x, h)`, `ax.hist(v)`) is one series too: its bars are
+    # named one by one above, and grouped here so its values and its build step have a part.
+    bars = 0
+    for c in ax.containers:
+        if isinstance(c, BarContainer) and not _label(c):
+            names = [t.by_artist[id(a)] for a in c.patches if id(a) in t.by_artist]
+            name = f"{p}.bars{bars}"
+            if names and name not in t:
+                t.add_group(name, names, "series", "positional", p)
+                t.parts[name].container = c
+                bars += 1
 
     for text in ax.texts:
         if text.get_text() and not t.claimed(text):
@@ -370,13 +388,16 @@ def _drawn_ticks(axis) -> list:
 
 
 def assign_ticks(fig: Figure, t: PartTable) -> None:
-    """Name major tick labels by their text. Call after a draw, when ticks exist."""
+    """Name major tick labels by their text, and major gridlines by their tick's (0.10.0). Call
+    after a draw, when ticks exist."""
     for ax in fig.axes:
         p = t.axes_names.get(id(ax))
         if p is None:
             continue
+        flat = getattr(ax, "name", None) != "3d"  # a 3D axis draws its grid in one group of its own
         for axis, letter in axis_letters(ax):
             names: list[str] = []
+            grids: list[str] = []
             for tick in _drawn_ticks(axis):
                 for label, suffix in ((tick.label1, "tick"), (tick.label2, "tick2")):
                     if label.get_visible() and label.get_text():
@@ -386,7 +407,56 @@ def assign_ticks(fig: Figure, t: PartTable) -> None:
                         n = t.add(f"{p}.{letter}{suffix}.{tick_slug(label.get_text())}", label, "tick", "semantic", p)
                         if n and mine:
                             names.append(n)
+                # A gridline is named only when it is drawn: an unnamed one leaves matplotlib's
+                # own group id, so a panel without a grid keeps its bytes.
+                if flat and tick.gridline.get_visible():
+                    text = tick.label1.get_text() or tick.label2.get_text() or f"{tick.get_loc():g}"
+                    mine = not t.claimed(tick.gridline)
+                    n = t.add(f"{p}.{letter}grid.{tick_slug(text)}", tick.gridline, "gridline", "semantic", p)
+                    if n and mine:
+                        grids.append(n)
+            if grids:
+                t.add_group(f"{p}.{letter}grid.*", grids, "grid", "semantic", p)
             if names:
                 # Both sides: a colorbar draws only label2 (`ytick2.*`), and "all the y tick
                 # labels" means those too — a group of the label1 side alone was empty there.
                 t.add_group(f"{p}.{letter}tick.*", names, "ticks", "semantic", p)
+
+
+def legend_series(fig: Figure, t: PartTable) -> None:
+    """Join each legend entry to the series its handle is, by artist (``Part.series``).
+
+    matplotlib keeps no link from an entry to the artist it was made from. A legend made from
+    the axes' labelled artists (``ax.legend()``, ``fig.legend()``) lists them in the order
+    ``get_legend_handles_labels`` returns, so when its texts are those labels one for one, entry
+    k stands for handle k. Any other legend (hand-picked handles, texts changed afterwards) is
+    joined to nothing: matching on the text alone joined an entry to whichever series happened
+    to share its words.
+    """
+    legends = [(ax.get_legend(), [ax]) for ax in fig.axes] + [(lg, fig.axes) for lg in fig.legends]
+    for legend, axes in legends:
+        if legend is None:
+            continue
+        handles: list = []
+        labels: list = []
+        for ax in axes:
+            h, lab = ax.get_legend_handles_labels()
+            handles += h
+            labels += lab
+        texts = legend.get_texts()
+        if [x.get_text() for x in texts] != labels:
+            continue
+        for text, handle in zip(texts, handles):
+            entry = t.parts.get(t.by_artist.get(id(text), ""))
+            if entry is None or entry.role != "legend-entry":
+                continue
+            artist = handle
+            if isinstance(handle, Container):
+                members = _container_members(handle)
+                artist = members[0] if members else None
+            name = t.by_artist.get(id(artist))
+            part = t.parts.get(name or "")
+            if part is None:
+                continue
+            parent = t.parts.get(part.parent or "")
+            entry.series = part.parent if parent is not None and parent.group else name
