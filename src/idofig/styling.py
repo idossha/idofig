@@ -15,7 +15,7 @@ import math
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -94,7 +94,7 @@ def _transform(artist: Any) -> dict:
     return {"scale": getattr(artist, "_idofig_scale", 1.0), "rotate": getattr(artist, "_idofig_rotate", 0.0)}
 
 
-def get_props(artist: Any, kind: str) -> dict:
+def _get_props(artist: Any, kind: str) -> dict:
     """Current values of the styleable properties (for the manifest and for 'was X in code').
 
     Not read back, so never in the manifest's ``props`` or ``base`` (SPEC.md says the same):
@@ -171,10 +171,21 @@ def get_props(artist: Any, kind: str) -> dict:
             texts = artist.get_texts()
             return {"visible": artist.get_visible(), "frameon": artist.get_frame_on(),
                     "fontsize": _num(texts[0].get_fontsize()) if texts else None,
-                    "title": artist.get_title().get_text(), **_offsets(artist)}
+                    "title": artist.get_title().get_text(), **_offsets(artist),
+                    "rotate": getattr(artist, "_idofig_rotate", 0.0)}
     except Exception:  # a getter a third-party artist does not implement
         return {}
     return {}
+
+
+def get_props(artist: Any, kind: str) -> dict:
+    """Style values and the common post-layout geometry contract."""
+    return {**_get_props(artist, kind), **_offsets(artist), **_transform(artist)}
+
+
+def svg_offset(part) -> bool:
+    """Moves new artist kinds in SVG; preserve established text/legend/axes placement."""
+    return part.kind not in {"text", "axes", "legend"} or part.role in {"tick", "legend-entry", "legend-title"}
 
 
 def _num(v: Any, places: int | None = 3) -> float | None:
@@ -329,22 +340,17 @@ def _movers(table: PartTable, names: list[str]) -> list[str]:
     """Of the parts an entry addresses, those a move moves itself: a part drawn in an axes the
     same entry moves comes along with its axes (moved again, `main.*` moved main's labels twice
     as far as main)."""
-    moved_axes = {n for n in names if table.parts[n].kind == "axes"}
-    axes_ids = {id(a) for n in moved_axes for a in table.parts[n].artists}
+    contained = set()
+    def descend(artist):
+        for child in artist.get_children():
+            if id(child) not in contained:
+                contained.add(id(child))
+                descend(child)
+    for name in names:
+        for artist in table.parts[name].artists:
+            descend(artist)
+    return [name for name in names if not any(id(a) in contained for a in table.parts[name].artists)]
 
-    def inside(name: str) -> bool:
-        part = table.parts[name]
-        # by its axes, or by its parent's: a text with a gid has no parent (the montage tags)
-        if part.kind != "axes" and any(id(getattr(a, "axes", None)) in axes_ids for a in part.artists):
-            return True
-        parent = part.parent
-        while parent is not None:
-            if parent in moved_axes:
-                return True
-            parent = table.parts[parent].parent if parent in table.parts else None
-        return False
-
-    return [n for n in names if not inside(n)]
 
 
 # What moves a part as a whole, with what is drawn in it: taken in the final pass, and on a group
@@ -423,7 +429,7 @@ def offsets(table: PartTable) -> list[tuple[Any, float, float]]:
     """``(artist, dx_mm, dy_mm)`` for every part a style moves (``apply`` recorded them)."""
     out = []
     for part in table.parts.values():
-        if part.group:  # its members are listed themselves
+        if part.group or svg_offset(part):  # SVG-only moves do not mutate matplotlib
             continue
         for artist in part.artists:
             dx, dy = _offsets(artist).values()
@@ -512,14 +518,53 @@ def axes_transforms(fig) -> dict[int, tuple[Any, tuple[float, ...], float]]:
         values = next((v for t in twins if (v := _transform(t)) != {"scale": 1.0, "rotate": 0.0}), None)
         if values is None:
             continue
-        s, r = float(values["scale"]), math.radians(float(values["rotate"]))
+        s = float(values["scale"])
         box = ax.get_position()
-        cx, cy = (box.x0 + box.x1) / 2 * w_pt, h_pt - (box.y0 + box.y1) / 2 * h_pt
-        a, b, c, d = s * math.cos(r), s * math.sin(r), -s * math.sin(r), s * math.cos(r)
-        matrix = (a, b, c, d, cx - a * cx - c * cy, cy - b * cx - d * cy)
+        matrix = _about((box.x0 + box.x1) / 2 * w_pt, h_pt - (box.y0 + box.y1) / 2 * h_pt, s, float(values["rotate"]))
         for t in twins:
             out[id(t)] = (t, matrix, s)
     return out
+
+
+def artist_transforms(table: PartTable, box_of: Callable[[Any], list[float] | None]
+                      ) -> dict[int, tuple[Any, tuple[float, ...], float]]:
+    """Local post-layout transforms, in panel points, about each artist's own box."""
+    out = {}
+    for part in table.parts.values():
+        if part.kind == "axes" or part.group:
+            continue
+        for artist in part.artists:
+            scale, rotate = _transform(artist).values()
+            dx, dy = _offsets(artist).values() if svg_offset(part) else (0, 0)
+            if (scale, rotate, dx, dy) == (1, 0, 0, 0):
+                continue
+            box = box_of(artist)
+            if box:
+                m = _about((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, scale, rotate)
+                m = (*m[:4], m[4] + dx * 72 / MM_PER_IN, m[5] + dy * 72 / MM_PER_IN)
+                if not all(math.isfinite(v) for v in m):
+                    raise ValueError("artist transform exceeds finite SVG coordinates")
+                out[id(artist)] = (artist, m, scale)
+    return out
+
+
+def _about(cx: float, cy: float, s: float, deg: float) -> tuple[float, ...]:
+    """SVG's ``(a, b, c, d, e, f)`` for translate(c) ∘ rotate(deg, clockwise in y down) ∘ scale(s)
+    ∘ translate(−c)."""
+    r = math.radians(deg)
+    a, b, c, d = s * math.cos(r), s * math.sin(r), -s * math.sin(r), s * math.cos(r)
+    matrix = (a, b, c, d, cx - a * cx - c * cy, cy - b * cx - d * cy)
+    if not all(math.isfinite(v) for v in matrix) or not 0 < a * d - b * c < math.inf:
+        raise ValueError("artist transform exceeds finite invertible SVG coordinates")
+    return matrix
+
+
+def then(outer: tuple[float, ...], inner: tuple[float, ...]) -> tuple[float, ...]:
+    """The SVG matrix of ``inner`` then ``outer`` (a group's inside a transformed group's)."""
+    a1, b1, c1, d1, e1, f1 = outer
+    a2, b2, c2, d2, e2, f2 = inner
+    return (a1 * a2 + c1 * b2, b1 * a2 + d1 * b2, a1 * c2 + c1 * d2, b1 * c2 + d1 * d2,
+            a1 * e2 + c1 * f2 + e1, b1 * e2 + d1 * f2 + f1)
 
 
 def map_box(box: list[float], m: tuple[float, ...]) -> list[float]:

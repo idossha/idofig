@@ -138,23 +138,22 @@ _cmap = _described(_cmap_check, type="text")
 _ALPHA = _num(0, 1)
 _WIDTH = _num(0, 100, "pt")
 _SIZE = _num(0.1, 500, "pt")
-_OFFSET = _num(-100, 100, "mm")
+_OFFSET = _num(unit="mm")
 
 # A part's move from where the script drew it, in mm with y down. Applied after the layout
 # is frozen (``styling.apply_offsets``), so the part lands exactly that far away. An axes moves
 # with everything drawn in it (0.6.0).
 OFFSETS = ("dx_mm", "dy_mm")
-# An axes' uniform scale and clockwise turn (degrees) about its box's centre, applied after its
-# move as one transform on its group in panel.svg, to everything drawn in it (0.7.0). Identity
-# (1, 0) writes nothing.
+# Uniform scale and clockwise turn about each artist's box centre, after layout.
+# Identity (1, 0) writes nothing; all kinds share the same validators below.
 TRANSFORMS = ("scale", "rotate")
+_ROTATE = _num(unit="deg")
 TICK_MARKS = ("tickdir", "ticklength", "tickwidth")
 
 PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     "text": {
         "text": _str, "fontsize": _SIZE, "fontweight": _weight, "fontstyle": _enum(FONTSTYLES),
         "fontfamily": _str, "color": _color, "alpha": _ALPHA, "visible": _bool, "rotation": _num(-360, 360),
-        "dx_mm": _OFFSET, "dy_mm": _OFFSET,
     },
     "line": {
         "color": _color, "linewidth": _WIDTH, "linestyle": _enum(LINESTYLES), "alpha": _ALPHA, "visible": _bool,
@@ -169,31 +168,31 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
         "visible": _bool, "size": _num(0, 10000), "cmap": _cmap, "vmin": _num(), "vmax": _num(),
     },
     "image": {"alpha": _ALPHA, "visible": _bool, "cmap": _cmap, "vmin": _num(), "vmax": _num()},
-    "axes": {"facecolor": _color, "visible": _bool, "dx_mm": _OFFSET, "dy_mm": _OFFSET,
-             "scale": _num(0.25, 4), "rotate": _num(-180, 180, "deg")},
+    "axes": {"facecolor": _color, "visible": _bool},
     "axis": {"visible": _bool, "tickdir": _enum({"in", "out", "inout"}), "ticklength": _WIDTH, "tickwidth": _WIDTH},
     "spine": {"visible": _bool, "linewidth": _WIDTH, "color": _color},
     "legend": {
         "visible": _bool, "loc": _enum(LEGEND_LOCS), "frameon": _bool, "fontsize": _SIZE, "title": _str,
-        "dx_mm": _OFFSET, "dy_mm": _OFFSET,
     },
 }
 
 # Properties that only make sense on one artist, never on a group or a wildcard.
 SINGLE_ONLY = {"text", "title"}
 
-# Properties refused on parts of a role, with the reason: accepted, they were listed applied and
-# drew nothing, or elsewhere. matplotlib copies a tick label's transform onto the ticks it makes
-# later, so one label's offset spreads; a moved legend entry left its key behind and crossed the
-# frame (the legend moves as one); a 3D axis draws its tick marks from its own settings, never
-# from tick_params (`ticklength: 8` left panel.svg unchanged).
-_MOVE_TICK = dict.fromkeys(OFFSETS, "a tick label cannot be moved: matplotlib copies its transform to new ticks")
-_MOVE_ENTRY = dict.fromkeys(OFFSETS, "move the legend instead: alone, its entries and title would leave their keys "
-                                     "and frame behind")
+# Geometry is available for every artist; only unsupported matplotlib setters are refused.
 REFUSED_BY_ROLE = {
-    "tick": _MOVE_TICK, "ticks": _MOVE_TICK, "legend-entry": _MOVE_ENTRY, "legend-title": _MOVE_ENTRY,
     "axis3d": dict.fromkeys(TICK_MARKS, "a 3D axis draws its tick marks from its own settings, not from tick_params"),
 }
+
+
+def _positive(v: Any) -> str | None:
+    problem = _num()(v)
+    return problem or ("must be positive" if v <= 0 else None)
+
+
+_SCALE = _described(_positive, type="number", exclusiveMin=0)
+for _table in PROPS.values():
+    _table.update(dx_mm=_OFFSET, dy_mm=_OFFSET, scale=_SCALE, rotate=_ROTATE)
 
 
 def allowed(kind: str) -> list[str]:

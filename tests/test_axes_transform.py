@@ -151,29 +151,28 @@ def test_identity_writes_the_same_panel_as_no_entry(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("props, problem", [
-    ({"scale": 5}, "scale must be ≤ 4"), ({"scale": 0.1}, "scale must be ≥ 0.25"),
-    ({"scale": 0}, "scale must be ≥ 0.25"), ({"rotate": 181}, "rotate must be ≤ 180"),
-    ({"rotate": -200}, "rotate must be ≥ -180"), ({"rotate": float("nan")}, "rotate must be a finite number"),
+    ({"scale": 0}, "scale must be positive"), ({"scale": -1}, "scale must be positive"),
+    ({"rotate": float("nan")}, "rotate must be a finite number"),
     ({"scale": "2"}, "scale must be a number"),
 ])
 def test_out_of_range_values_are_refused(props, problem):
     assert P.validate("axes", props) == [problem]
 
 
-def test_scale_and_rotate_are_axes_properties_only():
+def test_scale_and_rotate_are_common_properties():
     assert P.validate("axes", {"scale": 0.25, "rotate": -180}) == []
     assert P.validate("axes", {"scale": 4, "rotate": 180}) == []
-    assert "'scale' is not a text property" in P.validate("text", {"scale": 2})[0]
-    assert P.describe()["kinds"]["axes"]["rotate"] == {"type": "number", "min": -180, "max": 180, "unit": "deg"}
+    assert P.validate("text", {"scale": 2}) == []
+    assert P.describe()["kinds"]["axes"]["rotate"] == {"type": "number", "unit": "deg"}
 
 
 def test_the_style_command_refuses_an_out_of_range_value_and_writes_nothing(tmp_path, monkeypatch, capsys):
     project = _project(tmp_path, monkeypatch, BY_HAND)
     _build(project)
     style = project.panel_dir("fig-1", "a") / "style.json"
-    assert cli.main(["style", "fig-1", "a", "row.left", "scale=9"]) == 2 and not style.exists()
-    assert "scale must be ≤ 4" in capsys.readouterr().err
-    assert cli.main(["style", "fig-1", "a", "row.left.xlabel", "rotate=10"]) == 2 and not style.exists()
+    assert cli.main(["style", "fig-1", "a", "row.left", "scale=0"]) == 2 and not style.exists()
+    assert "scale must be positive" in capsys.readouterr().err
+    assert cli.main(["style", "fig-1", "a", "row.left.xlabel", "rotate=nan"]) == 2 and not style.exists()
     assert cli.main(["style", "fig-1", "a", "row.left", "scale=0.9", "rotate=10"]) == 0
     assert json.loads(read(style))["parts"]["row.left"] == {"scale": 0.9, "rotate": 10}
 
@@ -211,3 +210,72 @@ def test_a_turned_panel_rebuilds_to_the_same_bytes(tmp_path, monkeypatch):
     first = read(panel / "panel.svg"), read(panel / "manifest.json")
     assert build(project, ["fig-1"], force=True).ok
     assert (read(panel / "panel.svg"), read(panel / "manifest.json")) == first
+
+
+# A legend turns on its own (0.8.0, 2026-09-26): `rotate` on a `legend` part is one transform on
+# the legend's group, about the centre of its box (its frame, when drawn) as the save drew it.
+# Expected numbers: the matrix read back from panel.svg and judged by what it does, the
+# untransformed boxes from a build without the entry (BY_HAND's legends draw no frame).
+
+
+def test_a_legend_turns_about_its_centre_on_its_own_group(tmp_path, monkeypatch):
+    project = _project(tmp_path, monkeypatch, BY_HAND)
+    _build(project)
+    x0, y0, x1, y1 = _manifest(project)["parts"]["row.left.legend"]["bbox"]
+    _style(project, "row.left.legend", {"rotate": 30})
+    root = _build(project)
+    m = _matrix(root, "row.left.legend")
+    centre = ((x0 + x1) / 2, (y0 + y1) / 2)
+    assert _apply(m, *centre) == pytest.approx(centre, abs=1e-3)  # about the frame's centre
+    # a pure turn, clockwise on the page (y down): the unit x vector goes 30° below the horizontal
+    assert math.degrees(math.atan2(m[1], m[0])) == pytest.approx(30, abs=1e-4)
+    assert math.hypot(m[0], m[1]) == pytest.approx(1, abs=1e-6)
+    # only the legend's group carries it: its axes, the other legend and the texts are left alone
+    assert [el.get("id") for el in root.iter() if el.get("transform", "").startswith("matrix(")] == ["row.left.legend"]
+    man = _manifest(project)
+    assert man["style"]["invalid"] == [] and man["parts"]["row.left.legend"]["props"]["rotate"] == 30
+    assert man["parts"]["row.left.legend"]["base"] == {"rotate": 0.0}
+
+
+def test_the_manifest_boxes_a_turned_legend_where_it_now_is(tmp_path, monkeypatch):
+    """Its own box, its frame and its entries are boxed around their turned boxes; inside a turned
+    axes, the legend's turn comes first, then the axes'."""
+    project = _project(tmp_path, monkeypatch, BY_HAND)
+    _build(project)
+    plain = _manifest(project)
+    _style(project, "row.left.legend", {"rotate": 90})
+    _style(project, "row.right", {"rotate": -20})
+    _style(project, "row.right.legend", {"rotate": 45})
+    root = _build(project)
+    man = _manifest(project)
+
+    def around(box, *ms):
+        pts = [(x, y) for x in (box[0], box[2]) for y in (box[1], box[3])]
+        for mat in ms:
+            pts = [_apply(mat, x, y) for x, y in pts]
+        return [min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)]
+
+    left = _matrix(root, "row.left.legend")
+    for part in ("row.left.legend", "row.left.legend.line"):
+        assert man["parts"][part]["bbox"] == pytest.approx(around(plain["parts"][part]["bbox"], left), abs=2e-3), part
+        assert "effective_scale" not in man["parts"][part]
+    assert man["parts"]["row.left.xlabel"]["bbox"] == plain["parts"]["row.left.xlabel"]["bbox"]
+    inner, outer = _matrix(root, "row.right.legend"), _matrix(root, "row.right")
+    for part in ("row.right.legend", "row.right.legend.line"):
+        assert man["parts"][part]["bbox"] == pytest.approx(around(plain["parts"][part]["bbox"], inner, outer), abs=2e-3), part
+
+
+def test_a_legend_at_rotate_0_writes_the_same_panel_as_no_entry(tmp_path, monkeypatch):
+    project = _project(tmp_path, monkeypatch, BY_HAND)
+    _build(project)
+    svg = read(project.panel_dir("fig-1", "a") / "panel.svg")
+    _style(project, "row.left.legend", {"rotate": 0})
+    _build(project)
+    assert read(project.panel_dir("fig-1", "a") / "panel.svg") == svg
+
+
+def test_a_legend_takes_common_rotate_and_scale():
+    assert P.validate("legend", {"rotate": -180}) == [] and P.validate("legend", {"rotate": 180}) == []
+    assert P.validate("legend", {"rotate": 181}) == []
+    assert P.validate("legend", {"scale": 2}) == []
+    assert P.describe()["kinds"]["legend"]["rotate"] == {"type": "number", "unit": "deg"}

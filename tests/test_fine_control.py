@@ -268,7 +268,7 @@ def test_offsets_move_text_and_legend_exactly_and_nothing_else(project):
     # every part reports what it takes, moved or not, so an editor can show it and tell an
     # override equal to the script's value; a tick label is not offered what it refuses
     assert man1["parts"]["main.ylabel"]["props"]["dx_mm"] == 0 and "base" not in man1["parts"]["main.ylabel"]
-    assert "dx_mm" not in man1["parts"]["main.xtick.a"]["props"]
+    assert man1["parts"]["main.xtick.a"]["props"]["dx_mm"] == 0
 
 
 def test_a_horizontal_legend_move_leaves_its_box_at_the_same_height(project):
@@ -895,47 +895,16 @@ def test_a_limit_width_or_size_that_is_not_finite_is_recorded_as_null(project, s
             saver(fig, {})
 
 
-def test_a_tick_label_cannot_be_moved(project, monkeypatch, capsys):
-    """Refused on every path that writes or checks a style: the server's update_style,
-    move_style and validate_style, the `idofig style` command, and a build (each passes the
-    part's role; dropping it from any one of the first four left every other test green).
-    Written by hand, it is reported by `idofig status` too, which printed nothing of it."""
-    from idofig import cli
-
-    def call(method, **params):
-        srv.out = io.StringIO()
-        srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-        return json.loads(srv.out.getvalue().splitlines()[-1])
-
-    refused = "copies its transform to new ticks"
-    build(project)
-    style = project.panel_dir("fig-1", "a") / "style.json"
-    srv = Server(project, out=io.StringIO())
-    for part in ("main.xtick.a", "main.xtick.*"):
-        reply = call("update_style", figure="fig-1", panel="a", part=part, props={"dx_mm": 1})
-        assert refused in " ".join(reply["error"]["data"]["problems"]), part
-    assert cli.main(["style", "fig-1", "a", "main.xtick.a", "dx_mm=1"]) == 2 and not style.exists()
-    assert refused in " ".join(call("validate_style", kind="text", props={"dx_mm": 1}, role="tick")["result"])
-    assert call("validate_style", kind="text", props={"dx_mm": 1})["result"] == []
-    S.update_style(style, "main.xlabel", {"dx_mm": 1})
-    before = read(style)
-    reply = call("move_style", figure="fig-1", panel="a", **{"from": "main.xlabel", "to": "main.xtick.a"})
-    assert refused in " ".join(reply["error"]["data"]["problems"]) and read(style) == before
-    style.unlink()
-    # written by hand, it is reported and not applied
-    x0 = _text_xy(_panel_svg(project), "main.xtick.a")
-    (project.panel_dir("fig-1", "a") / "style.json").write_text(
-        json.dumps({"schema": 1, "parts": {"main.xtick.a": {"dx_mm": 1}}}))
+def test_a_tick_label_moves_in_svg_without_changing_its_neighbors(project):
     assert build(project).ok
-    assert _manifest(project)["style"]["invalid"][0]["prop"] == "dx_mm"
-    assert _text_xy(_panel_svg(project), "main.xtick.a") == x0
-    monkeypatch.chdir(project.root)
-    capsys.readouterr()
-    assert cli.main(["status"]) == 0
-    assert any(line.startswith("      ! ignored main.xtick.a.dx_mm: ") and line.endswith(refused)
-               for line in capsys.readouterr().out.splitlines())
-    assert P.describe()["refused_by_role"]["tick"] == ["dx_mm", "dy_mm"]
-    assert P.describe()["kinds"]["text"]["dx_mm"] == {"type": "number", "min": -100, "max": 100, "unit": "mm"}
+    before = _manifest(project)["parts"]
+    _style(project, "main.xtick.a", {"dx_mm": 1})
+    assert build(project).ok
+    after = _manifest(project)["parts"]
+    assert _manifest(project)["style"]["invalid"] == []
+    assert after["main.xtick.a"]["bbox"][0] - before["main.xtick.a"]["bbox"][0] == pytest.approx(PT, abs=.001)
+    assert after["main.xtick.b"]["bbox"] == before["main.xtick.b"]["bbox"]
+    assert "tick" not in P.describe()["refused_by_role"]
 
 
 def _refusal(project, part, props):
@@ -946,24 +915,18 @@ def _refusal(project, part, props):
     return " ".join(json.loads(srv.out.getvalue().splitlines()[-1])["error"]["data"]["problems"])
 
 
-def test_a_legends_entries_and_title_move_only_with_the_legend(project):
-    """A 5 mm move of one entry left its key behind and put its words past the frame, which
-    kept its size and place."""
+def test_a_legends_entries_and_title_move_independently(project):
     _replace_in_producer(project, "    ax.legend()\n", '    ax.legend(title="kind")\n')
     assert build(project).ok
-    svg0, parts = _panel_svg(project), _manifest(project)["parts"]
-    for part in ("main.legend.control", "main.legend.title"):
-        assert "dx_mm" not in parts[part]["props"], part
-        assert "move the legend instead" in _refusal(project, part, {"dx_mm": 5}), part
-    (project.panel_dir("fig-1", "a") / "style.json").write_text(json.dumps(
-        {"schema": 1, "parts": {"main.legend.control": {"dx_mm": 5}, "main.legend.title": {"dy_mm": 1}}}))
+    before = _manifest(project)["parts"]
+    _style(project, "main.legend.control", {"dx_mm": 5})
+    _style(project, "main.legend.title", {"dy_mm": 1})
     assert build(project).ok
-    invalid = _manifest(project)["style"]["invalid"]
-    assert sorted((i["part"], i["prop"]) for i in invalid) == [("main.legend.control", "dx_mm"),
-                                                               ("main.legend.title", "dy_mm")]
-    for part in ("main.legend.control", "main.legend.title"):
-        assert _moved_mm(svg0, _panel_svg(project), part) == (0, 0), part
-    assert P.describe()["refused_by_role"]["legend-entry"] == ["dx_mm", "dy_mm"]
+    after = _manifest(project)["parts"]
+    assert _manifest(project)["style"]["invalid"] == []
+    assert after["main.legend.control"]["bbox"][0] - before["main.legend.control"]["bbox"][0] == pytest.approx(5 * PT, abs=.001)
+    assert after["main.legend.title"]["bbox"][1] - before["main.legend.title"]["bbox"][1] == pytest.approx(PT, abs=.001)
+    assert after["main.legend.trend"]["bbox"] == before["main.legend.trend"]["bbox"]
 
 
 def test_a_gid_names_a_part_but_keeps_what_its_role_refuses(project):
@@ -972,15 +935,14 @@ def test_a_gid_names_a_part_but_keeps_what_its_role_refuses(project):
     that left panel.svg unchanged."""
     _add_to_producer(project, 'ax.get_xticklabels()[1].set_gid("mid")')
     assert build(project).ok
-    svg0, mid = _panel_svg(project), _manifest(project)["parts"]["mid"]
-    assert (mid["role"], mid["stability"]) == ("tick", "author") and "dx_mm" not in mid["props"]
+    mid = _manifest(project)["parts"]["mid"]
+    assert (mid["role"], mid["stability"]) == ("tick", "author") and mid["props"]["dx_mm"] == 0
     assert "mid" not in _manifest(project)["parts"]["main.xtick.*"]["members"], "the gid keeps it out of the group"
-    assert "copies its transform to new ticks" in _refusal(project, "mid", {"dx_mm": 3})
     (project.panel_dir("fig-1", "a") / "style.json").write_text(
         json.dumps({"schema": 1, "parts": {"mid": {"dx_mm": 3}}}))
     assert build(project).ok
-    assert [i["prop"] for i in _manifest(project)["style"]["invalid"]] == ["dx_mm"]
-    assert _moved_mm(svg0, _panel_svg(project), "mid") == (0, 0)
+    assert _manifest(project)["style"]["invalid"] == []
+    assert _manifest(project)["parts"]["mid"]["bbox"][0] - mid["bbox"][0] == pytest.approx(3 * PT, abs=.001)
 
     _replace_in_producer(project, '    ax.get_xticklabels()[1].set_gid("mid")\n',
                          '    ax.patch.set_gid("plot-area")\n'
@@ -994,7 +956,7 @@ def test_a_gid_names_a_part_but_keeps_what_its_role_refuses(project):
     _three_d(project, extra="ax.zaxis.set_gid('depth')")
     assert build(project).ok
     drawn, depth = read(project.panel_dir("fig-1", "a") / "panel.svg"), _manifest(project)["parts"]["depth"]
-    assert depth["role"] == "axis3d" and depth["props"] == {"visible": True}
+    assert depth["role"] == "axis3d" and depth["props"] == {"visible": True, "dx_mm": 0, "dy_mm": 0, "scale": 1, "rotate": 0}
     (project.panel_dir("fig-1", "a") / "style.json").write_text(
         json.dumps({"schema": 1, "parts": {"depth": {"ticklength": 8, "tickdir": "in"}}}))
     assert build(project).ok
@@ -1020,14 +982,15 @@ def test_axis_tick_direction_length_and_width(project):
     x0, y0 = _tick_mark(_panel_svg(project), "main.xaxis"), _tick_mark(_panel_svg(project), "main.yaxis")
     # an unstyled axis reports the marks it drew, so an editor can show them
     assert _manifest(project)["parts"]["main.xaxis"]["props"] == {"visible": True, "tickdir": "out",
-                                                                  "ticklength": x0[0], "tickwidth": x0[1]}
+                                                                  "ticklength": x0[0], "tickwidth": x0[1],
+                                                                  "dx_mm": 0, "dy_mm": 0, "scale": 1, "rotate": 0}
     _style(project, "main.xaxis", {"tickdir": "in", "ticklength": 4, "tickwidth": 1.2})
     assert build(project).ok
     root = _panel_svg(project)
     assert _tick_mark(root, "main.xaxis") == (-4, 1.2)  # inward: the mark points up into the axes
     assert _tick_mark(root, "main.yaxis") == y0
     xa = _manifest(project)["parts"]["main.xaxis"]
-    assert xa["props"] == {"visible": True, "tickdir": "in", "ticklength": 4, "tickwidth": 1.2}
+    assert xa["props"] == {"visible": True, "tickdir": "in", "ticklength": 4, "tickwidth": 1.2, "dx_mm": 0, "dy_mm": 0, "scale": 1, "rotate": 0}
     assert xa["base"] == {"tickdir": "out", "ticklength": x0[0], "tickwidth": x0[1]}  # what the SVG drew before
 
 
@@ -1577,7 +1540,7 @@ def test_a_3d_axes_labels_move_exactly_and_its_tick_marks_are_refused(project):
     assert _moved_mm(svg0, svg1, "main.ylabel") == (0, 0) and _moved_mm(svg0, svg1, "main.title") == (0, 0)
 
     assert m["parts"]["main.xaxis"]["role"] == "axis3d"
-    assert m["parts"]["main.xaxis"]["props"] == {"visible": True}  # no tick values it does not draw by
+    assert m["parts"]["main.xaxis"]["props"] == {"visible": True, "dx_mm": 0, "dy_mm": 0, "scale": 1, "rotate": 0}  # no tick values it does not draw by
     assert P.describe()["refused_by_role"]["axis3d"] == ["tickdir", "ticklength", "tickwidth"]
     _style(project, "main.xaxis", {"ticklength": 8})
     assert build(project).ok

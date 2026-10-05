@@ -30,6 +30,9 @@ keeps every one of those decisions in a file the build applies:
   figure, so journal rules can be checked exactly.
 * **Nothing is lost silently.** An override whose part disappears is *detached* and reported,
   never applied to something else and never deleted; `idofig style … --move-to NEW` re-attaches it.
+* **Every named artist has the same geometry controls.** Move in millimetres, rotate clockwise,
+  and scale uniformly, including data marks, ticks and legend entries. Overrides live in
+  `style.json`; SVG and measured boxes rebuild together. See the [geometry contract](SPEC.md#stylejson--schema-1-and-2).
 * **Builds are deterministic.** Bundled fonts (Liberation Sans, Arial-metric), matplotlib
   defaults (your matplotlibrc never leaks in), fixed hash salt, no timestamps. A house style
   a script loads cannot crop a panel or turn its text into paths: panels are saved under
@@ -134,21 +137,22 @@ Every refinement is a small named delta that survives the script being re-run:
 | every letter at once | `figure.json` `letters` | pt / mm |
 | one panel's letter | `figure.json` `panels[].letter_offset_mm` | mm, y down |
 | a part's look | `style.json` (`fontsize`, `color`, …) | pt, … |
-| a text or legend part's position | `style.json` `dx_mm`, `dy_mm` | mm, y down |
-| an axes, or a group of axes, with everything drawn in it | `style.json` `dx_mm`, `dy_mm` on its name or a pattern (`row1.*`) | mm, y down |
-| an axes' size and angle, with everything drawn in it | `style.json` `scale` (0.25–4), `rotate` (−180–180, clockwise) on its name or a pattern | factor, degrees |
+| any named artist's position | `style.json` `dx_mm`, `dy_mm` | mm, y down, in parent coordinates |
+| any named artist's size and angle | `style.json` `scale` (positive factor), `rotate` (clockwise) | factor, degrees |
+| a text's typography angle | legacy `style.json` `rotation` (counter-clockwise, as matplotlib) | degrees |
 | an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
 | the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |
 | a panel's empty margin | `style.json` `trim: true` or `trim_mm` | mm |
 | the figure's size | nothing: it always fits what is drawn (`fit_margin_mm`); `width` and `height` are maxima | mm |
 
-`dx_mm`/`dy_mm` move a part after the layout is frozen, so it lands exactly that far from
-where the script drew it and nothing else moves; the freeze lasts that one save, so a
-script (or notebook) that saves again is laid out afresh. Tick labels cannot be moved, a
-legend's entries and title move only with their legend, and a 3D axis takes no tick-mark
-properties (it draws its ticks from its own settings) — a `gid` on the part changes none of
-that.
+`dx_mm`/`dy_mm`, `scale` and `rotate` apply after layout, including to individual data
+marks, tick labels and legend entries. Their clipping follows their drawing. Existing text,
+legend and axes offsets retain their placement behavior; see SPEC.md for the precise pivot
+and nested-transform contract. The technical 3D axis tick-mark setter limitation remains.
+
+Upgrading to 0.9.0 refreshes render-3 geometry metadata. Named images gain a stable outer
+SVG group containing their native flip and clipping, enabling correct first-edit previews.
 
 Upgrading from idofig 0.2.x makes every panel stale (the lock's `render` number) until
 `idofig build` redraws it; a panel whose producer runs an interpreter with an older idofig

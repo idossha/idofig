@@ -87,7 +87,7 @@ def _moved(before, after, ident, where=_text):
 
 def _image(root, ident):
     """An image's corner: matplotlib writes it flipped (`scale(1 -1)`), so y is negated."""
-    img = _el(root, ident)
+    img = next(_el(root, ident).iter(f"{SVG}image"))
     return float(img.get("x")), -float(img.get("y"))
 
 
@@ -147,7 +147,7 @@ def _panel(project):
     return project.panel_dir("fig-1", "a") / "panel.svg"
 
 
-@pytest.mark.parametrize("value", [150, float("nan"), "3", True])
+@pytest.mark.parametrize("value", [float("inf"), float("nan"), "3", True])
 def test_an_axes_offset_is_validated_like_a_labels(value):
     assert P.validate("axes", {"dx_mm": value}) and P.validate("axes", {"dy_mm": value})
     assert P.validate("axes", {"dx_mm": -100, "dy_mm": 100}) == []

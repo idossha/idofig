@@ -35,6 +35,26 @@ def transform_groups(svg: str, matrices: dict[str, tuple[float, ...]]) -> tuple[
     return svg, missing
 
 
+def wrap_images(svg: str, names: list[str]) -> str:
+    """Give an image and its dedicated clip group one stable transformable parent.
+
+    Matplotlib puts the clip outside the named image; transforming just the image moves it
+    through stationary clipping. The native flip stays inside this wrapper unchanged.
+    """
+    for name in names:
+        image = re.search(r'<image\b(?=[^>]*\bid="' + re.escape(name) + r'")[^>]*(?:/>|>.*?</image>)', svg, re.S)
+        if image is None:
+            continue
+        start, end = image.span()
+        clip = re.search(r'<g clip-path="[^"]+">\s*$', svg[:start])
+        close = re.match(r'\s*</g>', svg[end:])
+        if clip is not None and close is not None:
+            start, end = clip.start(), end + close.end()
+        native = svg[start:end].replace(f' id="{name}"', '', 1)
+        svg = svg[:start] + f'<g id="{name}">{native}</g>' + svg[end:]
+    return svg
+
+
 def finish_panel_svg(svg: str, *, panel: str, roles: dict[str, str]) -> str:
     svg = _DECL.sub("", svg)
     svg = _DOCTYPE.sub("", svg)

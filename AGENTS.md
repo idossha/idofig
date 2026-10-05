@@ -20,8 +20,9 @@ uv venv && uv pip install -e ".[test]"   # the test extra brings pytest and ruff
 2. **Names come from meaning.** Never make a derived name depend on drawing order when a
    role, a label or a text is available. Anything positional is marked `positional`.
 3. **Panels are never scaled.** A panel is drawn at its printed size; resizing means
-   redrawing. An axes inside it may be scaled or turned by style.json (`scale`, `rotate`,
-   0.7.0), as one SVG transform on its group; the checks then read the sizes it prints at.
+   redrawing. Any named artist inside it may move, scale or turn through the common
+   style.json geometry contract (0.9.0; SPEC.md); clipping and measured boxes follow its
+   SVG transform so previews and checks describe what actually prints.
 4. **Same inputs, same bytes.** Any change that makes a rebuild differ from the previous
    build (timestamps, versions, random ids, dict order, font fallback) is a bug.
    `tests/test_build.py::test_rebuild_is_byte_identical` guards it. `tests/golden/` holds
@@ -58,7 +59,7 @@ All under `src/idofig/`.
 | `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
 | `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context`; `panels` selects the Agg backend unless it runs in a session, `save` draws on an Agg canvas of its own, lays a panel out, moves offset parts, keeps named rasterized parts' names, measures only what was drawn (with the SVG's text metrics, not Agg's), then puts back what it changed to write the panel (canvas, dpi, size, layout, placements, moves, wrapped draws); style overrides stay set on the script's figure |
 | `naming.py` | the part-naming grammar |
-| `styling.py`, `props.py` | style.json application (`layout` spacing on the constrained engine and part styles before layout; `dx_mm`/`dy_mm` after it is frozen, for that one save: `Undo` — a moved axes carries what is drawn in it; an axes' `scale`/`rotate` as the matrix `axes_transforms` computes, which `svgpost.transform_groups` puts on its group and `draw._measure` boxes parts with); property registry, validation, what each role refuses, and a colour as CSS writes it (`css_color`) |
+| `styling.py`, `props.py` | style application and one capability registry: pre-layout styling, legacy post-layout offsets, common `axes_transforms`/`artist_transforms` matrices; `svgpost.transform_groups` applies them and `draw._measure` follows actual SVG ancestry. Validates finite geometry and unsupported setters; `css_color` normalizes colours |
 | `mplsetup.py`, `svgpost.py` | deterministic rc, bundled fonts, SVG post-processing |
 | `compose.py` | figure.json + panels → figure.svg (letters, image panels, annotations) |
 | `images.py` | the natural size of an image panel's file, read from its header (no imaging library) |

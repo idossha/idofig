@@ -224,7 +224,8 @@ A script is never rewritten to space or crop a panel: both are refinements, and 
 live in style.json (the producer owns what is drawn).
 
 Patterns may use `*` (`main.xtick.*`, `*.xlabel`). Resolution order: patterns, then groups,
-then single parts — the most specific wins. Properties by part kind:
+then single parts — the most specific wins. Every kind additionally accepts the common
+geometry properties described below. Other properties by part kind:
 
 | kind | properties |
 |---|---|
@@ -233,10 +234,10 @@ then single parts — the most specific wins. Properties by part kind:
 | patch | facecolor, edgecolor, color, linewidth, linestyle, alpha, visible, hatch |
 | collection | facecolor, edgecolor, color, linewidth, alpha, visible, size, cmap, vmin, vmax |
 | image | alpha, visible, cmap, vmin, vmax |
-| axes | facecolor, visible, dx_mm, dy_mm, scale (0.25–4), rotate (−180–180, degrees) |
+| axes | facecolor, visible, dx_mm, dy_mm, scale, rotate |
 | axis | visible, tickdir (in\|out\|inout), ticklength (pt), tickwidth (pt) |
 | spine | visible, linewidth, color |
-| legend | visible, loc, frameon, fontsize, title, dx_mm, dy_mm |
+| legend | visible, loc, frameon, fontsize, title, dx_mm, dy_mm, scale, rotate |
 
 `text` and `title` apply only to single parts. Overrides are applied with matplotlib
 setters before layout, so they reflow the panel. Restyling a series restyles its legend key.
@@ -255,71 +256,41 @@ not JSON is.
 A detached entry is re-attached by moving it to the part's new name
 (`idofig style FIG PANEL OLD --move-to NEW`, or `move_style` on the server).
 
-**Moving a part.** `dx_mm` and `dy_mm` (mm, y down, each within ±100) move a text or legend
-part — or every part a group or pattern names, by the same amount — from where the script
-drew it. They are the one exception to "before layout": the panel is laid out as it is
-saved, the layout is frozen, then the parts are moved, so a part lands exactly that far
-away, at any figure dpi, and nothing else moves (applied before the layout, a constrained
-layout absorbs the move). What matplotlib would place anew at every draw stays where that
-save placed it: titles (it lifts a title that dips below its axes and lines the titles up)
-and every `loc="best"` legend of the axes, one shown with `ax.add_artist` included (it
-avoids the axes' texts, a moved one too), which keeps the place "best" chose as the fixed
-`loc` that place is. A legend moves with the box it is
-anchored in, keeping its `loc`, padding and size (a `mode="expand"` legend keeps its width).
-An annotation's text moves and its arrow keeps ending at its data. A 3D axis' label moves
-too (its axis resets the label's transform at every draw; the move is added back). A 3D
-axis also turns its label to the axis' angle at every draw when the text is longer than 4
-characters; a `rotation` on the label turns that off (`set_rotate_label(False)`), and its
-`base` is the angle the label was drawn at. Tick
-labels (role `tick`, group role `ticks`) refuse them: matplotlib copies a tick label's
-transform to the ticks it creates later. So do a legend's entries and title (roles
-`legend-entry`, `legend-title`): their keys and the frame would stay behind; move the legend.
+**Common artist geometry (0.9.0).** Every named artist kind accepts `dx_mm`, `dy_mm`
+(finite millimetres, positive right/down), `scale` (finite, strictly positive uniform factor,
+default 1), and `rotate` (finite clockwise degrees, default 0). No role-based geometry
+refusals apply: ticks, legend entries, data lines, patches, collections, images, spines and
+axes may all move independently. The legacy text `rotation` remains matplotlib's typography
+setting, counter-clockwise, and is independent of the common clockwise `rotate`.
 
-**Moving an axes, or a group of axes (0.6.0).** `dx_mm`/`dy_mm` on an `axes` part (a
-colorbar's too) move its box after the layout is frozen, and so everything drawn in it: tick
-marks and labels, axis labels, title, legend, images, texts and annotations placed in its data
-or axes coordinates. Its twins (`twinx`) share the box and move with it. What is placed in
-the figure's coordinates (`fig.text`, a figure legend) or in another axes does not move. On a
-pattern or group entry (`row1.*`, `stim.brain.*`), each axes it names moves by the offset,
-and a part it also names that is drawn in one of those axes — by its `parent`, or by its axes
-for a text with a gid of its own — is not moved again: `main.*` moves main and its labels
-together, once. Works the same on a panel placed by hand (`layout=None`, `axes_mm`) and on a
-constrained one; in the latter the engine does not make room (it has laid the panel out
-already), so a moved axes may overlap a neighbour, which `trim` and the ink check see where
-it now is. The manifest's boxes, `trim` and compose's fit all measure the moved axes. A move
-never resizes an axes (that is `scale`, below; the panel itself is never scaled). The script is
-never rewritten; to fold a settled move into it, change its constants, delete the entries,
-rebuild, and compare the panel.
+Geometry is applied after layout. Scale and turn are SVG group transforms about the centre
+of the artist's untransformed built bounding box; axes use their frame centre. They carry
+that artist's native clipping and child drawing with it. An image's native flip is preserved
+inside a wrapper. A nested artist transforms first in its parent's coordinates, then inherits
+its containing SVG groups' transforms. `dx_mm`/`dy_mm` are local parent-space displacement,
+so a parent scale or turn also scales or turns that displacement. The matrix for a new
+SVG-positioned artist is `translate(c + offset) ∘ rotate ∘ scale ∘ translate(-c)`.
 
-**Scaling and rotating an axes, or a group of axes (0.7.0).** `scale` (a uniform factor, 0.25
-to 4, default 1) and `rotate` (degrees, −180 to 180, default 0; positive turns clockwise on the
-page, as SVG's `rotate` does in its y-down space) on an `axes` part scale and turn it and
-everything drawn in it — what `dx_mm`/`dy_mm` would move with it: tick marks and labels, axis
-labels, title, legend, images, texts, lines, patches and collections, and its clipping. They
-are one transform on the axes' group in panel.svg, `transform="matrix(a b c d e f)"` on its
-`<g id="<name>">`, about the centre of the axes' box as the save drew it — after the layout,
-after its locator and after its own `dx_mm`/`dy_mm` —
+Existing text, legend and axes offsets retain their post-layout matplotlib placement behavior:
+annotation text moves while its arrow endpoint stays anchored; an axes moves its box and twins;
+a legend keeps its anchor and size. Their raw frame already includes that displacement, so the
+SVG matrix applies scale/rotation only. Newly movable artists (including individual tick and
+legend labels) apply their displacement in SVG, avoiding matplotlib's tick-transform sharing.
+The manifest's `offset_in_matrix` distinguishes the two representations; the public properties
+and physical units are the same. The panel itself continues to be redrawn at its printed size.
 
-    M = translate(cx, cy) ∘ rotate(rotate) ∘ scale(scale) ∘ translate(−cx, −cy)
+A group or pattern applies geometry once to each addressed artist not already contained in
+another addressed artist. Specific child overrides remain independent. Identity geometry
+writes no SVG matrix. A missing drawable group is reported as a warning; no source override
+is silently deleted. Non-finite input and nonpositive scale are rejected; finite values that
+overflow the resulting SVG matrix fail the build instead of publishing corrupt coordinates.
 
-in the panel's points, y down (a point is scaled about the centre, then turned; a uniform
-scale and a turn about one point commute, so the order is stated, not load-bearing). Its twins
-(`twinx`) share its box and its group's transform, taken from the first of them whose values
-are not identity. A colorbar is an axes of its own and is not turned with the axes it
-belongs to: name both (`cov` and `cbar.cov`, or a pattern) to turn both, each about its own
-centre. A 3D axes takes them as any other (the transform is on the drawn group, not on its
-projection). Nothing reflows: the layout is not re-run, so a scaled axes may overlap a
-neighbour, which `trim`, the ink check and compose's fit see where it now is. On a group or
-pattern entry each axes it names is turned about its own centre, and a part drawn in one of
-them is turned once, with it (as for a move); a part the entry names outside those axes
-refuses the property (`'scale' is not a text property`). Identity (`scale` 1, `rotate` 0)
-writes nothing: the panel.svg is byte for byte the one without the entry. An axes that is not
-drawn has no group, and a scaled one whose group is not in panel.svg (a rasterized axes with
-a positional name, which matplotlib writes as one image with no id) gets a manifest warning,
-`<name>: scale/rotate had no effect: …`. The manifest (below) boxes every part drawn in the
-axes around its turned box, records the scale it prints at, and gives the axes' `frame` and
-`matrix`, so a canvas draws the turned frame and its handles; the checks read the size a part
-prints at (a 7 pt label in an axes at `scale` 0.8 is a 5.6 pt label).
+Each individual part supplies `frame` (its raw built box in panel points), optional `own_matrix`
+(its own SVG transform), and optional `matrix` (the composed transform through actual SVG
+ancestors). `bbox` is the axis-aligned box after that composed transform. All coordinates are
+crop-adjusted when `trim` applies. `effective_scale` includes nested scaling so checks read the
+size actually printed. A canvas uses `frame` and the matrices for its handles and selection;
+it must not transform an already transformed `bbox` a second time.
 
 All of this lasts one save. Once the panel is written, the script's figure is as it was —
 its layout engine, its titles' and legends' placement and anchors, each part where the script put it —
@@ -403,7 +374,7 @@ at or below 0 on a log axis, which matplotlib places 1000 decades down, stretche
 collection's box to the axes' edge.
 `props` are the current values of the properties the part takes that idofig reads back —
 all of them except a legend's `loc`, a patch's `color`, and a collection's `color`, its `size` unless its marks share one, and its `cmap`, `vmin` and `vmax` unless it
-maps values to colours — less those its role refuses (a tick label has no `dx_mm`). An
+maps values to colours — less technically unsupported setters (3D axis tick-mark settings). An
 editor cannot tell an override of one of those it does not read back from the script's
 value. A colour is `#rrggbb`, or `none` when nothing is drawn in it (a bar's or a pcolor's
 default edge, open markers); a collection's is `none` when it draws none, and `null` when its
@@ -433,7 +404,9 @@ points as `bbox` (a trimmed panel's measured from the crop's corner, so the matr
 panel.svg's by the crop's offset): a canvas draws the turned frame as `matrix` applied to
 `frame`'s corners and its centre is `frame`'s centre. A `{panel, axes, data}` anchor is placed
 in `frame` and mapped by `matrix`, so it stays on its data point. Absent, all three mean
-identity, as every manifest before 0.7.0.
+identity, as every manifest before 0.7.0. Since 0.9.0 every individual part also carries
+`frame` and, when transformed, `matrix`/`own_matrix`, as specified in Common artist geometry
+above. The same measurement rule applies through all actual SVG ancestor groups.
 
 ## figure.lock.json — schema 1
 
@@ -464,6 +437,10 @@ build fails`, and gives the same step. The lock does not see that upgrade, so th
 reads fresh; `check`, which runs the producer, then reports ``drawn by idofig 0.2.2 (render
 1); its producer now draws with render 2 — `idofig build --force <fig>` redraws it`` rather
 than "not reproducible".
+
+**Upgrading to 0.9.0.** Render 3 rebuilds manifests with common geometry and composed
+artist boxes. Named images gain an outer SVG group enclosing their native transform and clipping;
+other unedited SVG drawing stays the same.
 
 **Upgrading from 0.2.x.** Every panel is stale (render 2) until `idofig build` redraws it.
 Its panel.svg keeps its bytes unless it has a named rasterized part (every continuous

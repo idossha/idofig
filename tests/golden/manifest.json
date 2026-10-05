@@ -2,7 +2,7 @@
   "schema": 1,
   "figure": "fig-1",
   "panel": "a",
-  "render": 2,
+  "render": 3,
   "size": {
     "w_pt": 249.449,
     "h_pt": 170.079,
@@ -20,6 +20,13 @@
         249.449,
         170.079
       ],
+      "frame": [
+        0.0,
+        0.0,
+        249.449,
+        170.079
+      ],
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#ffffff",
         "edgecolor": "#ffffff",
@@ -27,7 +34,11 @@
         "linestyle": "solid",
         "alpha": null,
         "visible": true,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main": {
@@ -40,6 +51,13 @@
         246.449,
         144.878
       ],
+      "frame": [
+        31.246,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "offset_in_matrix": false,
       "props": {
         "facecolor": "#ffffff",
         "visible": true,
@@ -60,6 +78,13 @@
         246.449,
         144.878
       ],
+      "frame": [
+        31.246,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#ffffff",
         "edgecolor": "none",
@@ -67,7 +92,11 @@
         "linestyle": "solid",
         "alpha": null,
         "visible": true,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.title": {
@@ -81,6 +110,13 @@
         150.329,
         9.57
       ],
+      "frame": [
+        127.366,
+        3.0,
+        150.329,
+        9.57
+      ],
+      "offset_in_matrix": false,
       "props": {
         "text": "panel a",
         "fontsize": 7.0,
@@ -92,7 +128,9 @@
         "visible": true,
         "rotation": 0.0,
         "dx_mm": 0.0,
-        "dy_mm": 0.0
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xlabel": {
@@ -106,6 +144,13 @@
         152.857,
         167.079
       ],
+      "frame": [
+        124.838,
+        160.509,
+        152.857,
+        167.079
+      ],
+      "offset_in_matrix": false,
       "props": {
         "text": "condition",
         "fontsize": 7.0,
@@ -117,7 +162,9 @@
         "visible": true,
         "rotation": 0.0,
         "dx_mm": 0.0,
-        "dy_mm": 0.0
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xaxis": {
@@ -125,12 +172,28 @@
       "role": "axis",
       "stability": "semantic",
       "parent": "main",
-      "bbox": null,
+      "bbox": [
+        66.975,
+        150.878,
+        210.885,
+        167.079
+      ],
+      "frame": [
+        66.975,
+        150.878,
+        210.885,
+        167.079
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "tickdir": "out",
         "ticklength": 2.5,
-        "tickwidth": 0.6
+        "tickwidth": 0.6,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ylabel": {
@@ -144,6 +207,13 @@
         9.57,
         93.884
       ],
+      "frame": [
+        3.0,
+        65.09,
+        9.57,
+        93.884
+      ],
+      "offset_in_matrix": false,
       "props": {
         "text": "response",
         "fontsize": 7.0,
@@ -155,7 +225,9 @@
         "visible": true,
         "rotation": 90.0,
         "dx_mm": 0.0,
-        "dy_mm": 0.0
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.yaxis": {
@@ -163,12 +235,28 @@
       "role": "axis",
       "stability": "semantic",
       "parent": "main",
-      "bbox": null,
+      "bbox": [
+        3.0,
+        18.14,
+        25.246,
+        148.325
+      ],
+      "frame": [
+        3.0,
+        18.14,
+        25.246,
+        148.325
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "tickdir": "out",
         "ticklength": 2.5,
-        "tickwidth": 0.6
+        "tickwidth": 0.6,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.spine.left": {
@@ -182,10 +270,21 @@
         31.246,
         144.878
       ],
+      "frame": [
+        28.746,
+        14.096,
+        31.246,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "linewidth": 0.6,
-        "color": "#000000"
+        "color": "#000000",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.spine.right": {
@@ -199,10 +298,21 @@
         246.449,
         144.878
       ],
+      "frame": [
+        246.449,
+        14.096,
+        246.449,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "linewidth": 0.6,
-        "color": "#000000"
+        "color": "#000000",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.spine.bottom": {
@@ -216,10 +326,21 @@
         246.449,
         147.378
       ],
+      "frame": [
+        31.246,
+        144.878,
+        246.449,
+        147.378
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "linewidth": 0.6,
-        "color": "#000000"
+        "color": "#000000",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.spine.top": {
@@ -233,10 +354,21 @@
         246.449,
         14.096
       ],
+      "frame": [
+        31.246,
+        14.096,
+        246.449,
+        14.096
+      ],
+      "offset_in_matrix": true,
       "props": {
         "visible": true,
         "linewidth": 0.6,
-        "color": "#000000"
+        "color": "#000000",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.series.control.0": {
@@ -250,6 +382,13 @@
         96.925,
         144.878
       ],
+      "frame": [
+        41.028,
+        82.601,
+        96.925,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#0072b2",
         "edgecolor": "none",
@@ -257,7 +396,11 @@
         "linestyle": "solid",
         "alpha": null,
         "visible": true,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.series.control.1": {
@@ -271,6 +414,13 @@
         166.796,
         144.878
       ],
+      "frame": [
+        110.899,
+        20.324,
+        166.796,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#0072b2",
         "edgecolor": "none",
@@ -278,7 +428,11 @@
         "linestyle": "solid",
         "alpha": null,
         "visible": true,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.series.control.2": {
@@ -292,6 +446,13 @@
         236.667,
         144.878
       ],
+      "frame": [
+        180.77,
+        51.463,
+        236.667,
+        144.878
+      ],
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#0072b2",
         "edgecolor": "none",
@@ -299,7 +460,11 @@
         "linestyle": "solid",
         "alpha": null,
         "visible": true,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.series.control": {
@@ -331,6 +496,13 @@
         208.718,
         70.146
       ],
+      "frame": [
+        68.976,
+        32.78,
+        208.718,
+        70.146
+      ],
+      "offset_in_matrix": true,
       "props": {
         "color": "#d55e00",
         "linewidth": 1.0,
@@ -340,7 +512,11 @@
         "marker": "None",
         "markersize": 3.0,
         "markerfacecolor": "#d55e00",
-        "markeredgecolor": "#d55e00"
+        "markeredgecolor": "#d55e00",
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.legend": {
@@ -354,13 +530,22 @@
         243.449,
         36.158
       ],
+      "frame": [
+        203.841,
+        17.096,
+        243.449,
+        36.158
+      ],
+      "offset_in_matrix": false,
       "props": {
         "visible": true,
         "frameon": false,
         "fontsize": 6.0,
         "title": "",
         "dx_mm": 0.0,
-        "dy_mm": 0.0
+        "dy_mm": 0.0,
+        "rotate": 0.0,
+        "scale": 1.0
       }
     },
     "main.legend.frame": {
@@ -369,6 +554,8 @@
       "stability": "semantic",
       "parent": "main.legend",
       "bbox": null,
+      "frame": null,
+      "offset_in_matrix": true,
       "props": {
         "facecolor": "#ffffff",
         "edgecolor": "#cccccc",
@@ -376,7 +563,11 @@
         "linestyle": "solid",
         "alpha": 0.8,
         "visible": false,
-        "hatch": null
+        "hatch": null,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.legend.trend": {
@@ -390,6 +581,13 @@
         236.715,
         25.127
       ],
+      "frame": [
+        223.041,
+        19.496,
+        236.715,
+        25.127
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "trend",
         "fontsize": 6.0,
@@ -399,7 +597,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.legend.control": {
@@ -413,6 +615,13 @@
         241.049,
         33.758
       ],
+      "frame": [
+        223.041,
+        28.127,
+        241.049,
+        33.758
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "control",
         "fontsize": 6.0,
@@ -422,7 +631,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xtick.a": {
@@ -436,6 +649,13 @@
         70.978,
         156.509
       ],
+      "frame": [
+        66.975,
+        150.878,
+        70.978,
+        156.509
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "A",
         "fontsize": 6.0,
@@ -445,7 +665,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xtick.b": {
@@ -459,6 +683,13 @@
         140.848,
         156.509
       ],
+      "frame": [
+        136.846,
+        150.878,
+        140.848,
+        156.509
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "B",
         "fontsize": 6.0,
@@ -468,7 +699,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xtick.c": {
@@ -482,6 +717,13 @@
         210.885,
         156.509
       ],
+      "frame": [
+        206.552,
+        150.878,
+        210.885,
+        156.509
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "C",
         "fontsize": 6.0,
@@ -491,7 +733,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.xtick.*": {
@@ -523,6 +769,13 @@
         25.246,
         148.325
       ],
+      "frame": [
+        13.57,
+        142.694,
+        25.246,
+        148.325
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "0.00",
         "fontsize": 6.0,
@@ -532,7 +785,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.0-25": {
@@ -546,6 +803,13 @@
         25.246,
         132.756
       ],
+      "frame": [
+        13.57,
+        127.125,
+        25.246,
+        132.756
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "0.25",
         "fontsize": 6.0,
@@ -555,7 +819,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.0-50": {
@@ -569,6 +837,13 @@
         25.246,
         117.187
       ],
+      "frame": [
+        13.57,
+        111.556,
+        25.246,
+        117.187
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "0.50",
         "fontsize": 6.0,
@@ -578,7 +853,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.0-75": {
@@ -592,6 +871,13 @@
         25.246,
         101.617
       ],
+      "frame": [
+        13.57,
+        95.986,
+        25.246,
+        101.617
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "0.75",
         "fontsize": 6.0,
@@ -601,7 +887,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.1-00": {
@@ -615,6 +905,13 @@
         25.246,
         86.048
       ],
+      "frame": [
+        13.57,
+        80.417,
+        25.246,
+        86.048
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "1.00",
         "fontsize": 6.0,
@@ -624,7 +921,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.1-25": {
@@ -638,6 +939,13 @@
         25.246,
         70.479
       ],
+      "frame": [
+        13.57,
+        64.848,
+        25.246,
+        70.479
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "1.25",
         "fontsize": 6.0,
@@ -647,7 +955,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.1-50": {
@@ -661,6 +973,13 @@
         25.246,
         54.909
       ],
+      "frame": [
+        13.57,
+        49.279,
+        25.246,
+        54.909
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "1.50",
         "fontsize": 6.0,
@@ -670,7 +989,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.1-75": {
@@ -684,6 +1007,13 @@
         25.246,
         39.34
       ],
+      "frame": [
+        13.57,
+        33.709,
+        25.246,
+        39.34
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "1.75",
         "fontsize": 6.0,
@@ -693,7 +1023,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.2-00": {
@@ -707,6 +1041,13 @@
         25.246,
         23.771
       ],
+      "frame": [
+        13.57,
+        18.14,
+        25.246,
+        23.771
+      ],
+      "offset_in_matrix": true,
       "props": {
         "text": "2.00",
         "fontsize": 6.0,
@@ -716,7 +1057,11 @@
         "color": "#000000",
         "alpha": null,
         "visible": true,
-        "rotation": 0.0
+        "rotation": 0.0,
+        "dx_mm": 0.0,
+        "dy_mm": 0.0,
+        "scale": 1.0,
+        "rotate": 0.0
       }
     },
     "main.ytick.*": {

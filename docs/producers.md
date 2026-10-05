@@ -124,7 +124,7 @@ survives new data:
 
 | rung | where | for |
 |---|---|---|
-| 1. restyle or nudge a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend | a label, a title, a legend in the wrong place |
+| 1. restyle, nudge or turn a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend; `rotation` on a text, `rotate` on a legend | a label, a title, a legend in the wrong place or at the wrong angle |
 | 2. space the axes | `style.json` `layout` (`hspace_mm`, `wspace_mm`, `pad_mm`) | gaps in a constrained panel |
 | 3. crop the empty margin | `style.json` `trim` / `trim_mm` | white space around the ink |
 | 4. move, scale or turn an axes or a group of axes | `style.json` `dx_mm`/`dy_mm`, `scale`, `rotate` on its name or a pattern (`*.regions`) | rearranging within a panel, closing a gap in a `layout=None` panel, a montage drawn a little too large or at a tilt |

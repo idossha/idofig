@@ -309,6 +309,9 @@ def _extent(artist, renderer):
     """``artist.get_window_extent``, except for a 3D axes' text, which ``Text3D.draw`` puts at its
     projection only while it draws: measured after, "peak" drawn at (162, 54) pt was boxed at
     (6758, -6558), 2314 mm outside its panel. It is measured where its draw puts it."""
+    from matplotlib.axis import Axis
+    if isinstance(artist, Axis):
+        return artist.get_tightbbox(renderer)
     art3d = sys.modules.get("mpl_toolkits.mplot3d.art3d")  # imported by any 3D axes
     if art3d is None or not isinstance(artist, art3d.Text3D):
         return artist.get_window_extent(renderer)
@@ -372,24 +375,10 @@ def _axes_info(ax, renderer, height_pt: float, mats: dict) -> dict:
     return info
 
 
-def _host_transform(part, table, mats: dict):
-    """The (matrix, scale) of the scaled or rotated axes a part is drawn in, or None: the part's
-    own axes (an axes' is itself), else its parent's, walked up (a legend's texts have none),
-    and an inset's parent axes (its group is inside its parent's)."""
-    artist = part.artists[0]
-    ax = artist if part.kind == "axes" else getattr(artist, "axes", None)
-    parent = part.parent
-    while ax is None and parent in table.parts:
-        up = table.parts[parent]
-        ax = up.artists[0] if up.kind == "axes" else getattr(up.artists[0], "axes", None)
-        parent = up.parent
-    while ax is not None:
-        if id(ax) in mats:
-            return mats[id(ax)][1:]
-        if ax.axes is ax:
-            return None
-        ax = ax.axes
-    return None
+def _svg_renderer(fig, height_pt: float):
+    from matplotlib.backends.backend_svg import RendererSVG
+
+    return RendererSVG(fig.get_figwidth() * PT_PER_IN, height_pt, StringIO())
 
 
 def _ships_with_matplotlib(path: str) -> bool:
@@ -562,16 +551,39 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
             styling.apply_offsets(fig, moves, undo)
         _instrument(table, undo)
         svg_text = _svg(fig)
-        mats = styling.axes_transforms(fig)
-        svg_text, unplaced = svgpost.transform_groups(
-            svg_text, {table.axes_names[k]: m for k, (_, m, _) in mats.items()
-                       if k in table.axes_names and table.parts[table.axes_names[k]].artists[0]._idofig_drawn})
+        svg_text = svgpost.wrap_images(svg_text, [n for n, p in table.parts.items() if p.kind == "image" and not p.group])
         width_pt = fig.get_figwidth() * PT_PER_IN
         height_pt = fig.get_figheight() * PT_PER_IN
         # Boxes are in the SVG's units, points, at 72 dpi whatever the figure's: measured at a
         # producer's `set_dpi(300)`, every box was 300/72 too large, far outside the panel.
         undo.set(fig, "dpi", 72)
-        parts, axes, roles = _measure(fig, table, sreport, height_pt, mats)
+        mats = styling.axes_transforms(fig)
+        groups = {table.axes_names[k]: m for k, (_, m, _) in mats.items()
+                  if k in table.axes_names and table.parts[table.axes_names[k]].artists[0]._idofig_drawn}
+        # A turned legend (0.8.0), about its box as the manifest measures it (the SVG renderer's metrics)
+        svg_renderer = _svg_renderer(fig, height_pt)
+        legends = styling.artist_transforms(table, lambda lg: _bbox(lg, svg_renderer, height_pt))
+        mats.update(legends)
+        groups.update({n: legends[id(p.artists[0])][1] for n, p in table.parts.items()
+                       if not p.group and id(p.artists[0]) in legends})
+        svg_text, unplaced = svgpost.transform_groups(svg_text, groups)
+        # Actual SVG ancestry includes axis labels/ticks and inset axes that semantic
+        # parent names intentionally flatten. Measure the same nesting the browser paints.
+        import xml.etree.ElementTree as ET
+        hosts = {}
+        named_mats = {n: mats[id(p.artists[0])][1:] for n, p in table.parts.items()
+                      if not p.group and id(p.artists[0]) in mats and n not in unplaced}
+        def walk(el, outer=None):
+            name = el.get("id")
+            own = named_mats.get(name)
+            host = ((styling.then(outer[0], own[0]), outer[1] * own[1]) if outer else own) if own else outer
+            if name and host:
+                hosts[name] = host
+            for child in el:
+                walk(child, host)
+        if named_mats:
+            walk(ET.fromstring(svg_text))
+        parts, axes, roles = _measure(fig, table, sreport, height_pt, mats, hosts)
 
     warnings = list(table.warnings) + layout_warnings + _check_fonts(table)
     warnings += [f"{name}: scale/rotate had no effect: its group is not in panel.svg (a rasterized axes "
@@ -637,10 +649,13 @@ def _trim(parts: dict, axes: dict, width_pt: float, height_pt: float, margin_pt:
         if "matrix" in entry:  # measured from the crop's corner too: T(-x0, -y0) ∘ M ∘ T(x0, y0)
             a, b, c, d, e, f = entry["matrix"]
             entry["matrix"] = [a, b, c, d, round(e + a * x0 + c * y0 - x0, 6), round(f + b * x0 + d * y0 - y0, 6)]
+        if "own_matrix" in entry:
+            a, b, c, d, e, f = entry["own_matrix"]
+            entry["own_matrix"] = [a, b, c, d, round(e + a * x0 + c * y0 - x0, 6), round(f + b * x0 + d * y0 - y0, 6)]
     return {"x_pt": x0, "y_pt": y0, "w_pt": r(x1 - x0), "h_pt": r(y1 - y0)}
 
 
-def _measure(fig, table, sreport, height_pt: float, mats: dict) -> tuple[dict, dict, dict]:
+def _measure(fig, table, sreport, height_pt: float, mats: dict, hosts: dict) -> tuple[dict, dict, dict]:
     """The manifest's parts and axes, measured on the figure the save just wrote (its offsets
     still applied), and the roles the SVG marks. A part drawn in a scaled or rotated axes is
     boxed around its turned box (``mats``, from ``styling.axes_transforms``), and records the
@@ -650,12 +665,10 @@ def _measure(fig, table, sreport, height_pt: float, mats: dict) -> tuple[dict, d
     from . import props as P
     from . import styling
 
-    from matplotlib.backends.backend_svg import RendererSVG
-
     # Measured with the text metrics the SVG was laid out with, the SVG renderer's. Agg's round a
     # text to whole pixels at 72 dpi and, under matplotlib < 3.11, pad a math text a pixel a side:
     # a `log$_{10}$` xlabel whose ink was 1.2 mm inside its panel was boxed 0.7 mm outside it.
-    renderer = RendererSVG(fig.get_figwidth() * PT_PER_IN, height_pt, StringIO())
+    renderer = _svg_renderer(fig, height_pt)
     parts: dict[str, dict] = {}
     roles: dict[str, str] = {}
     for n, part in table.parts.items():
@@ -670,8 +683,14 @@ def _measure(fig, table, sreport, height_pt: float, mats: dict) -> tuple[dict, d
             artist = part.artists[0]
             entry["bbox"] = (_bbox(artist, renderer, height_pt, clipped=part.kind == "text")
                              if artist._idofig_drawn else None)
-            host = _host_transform(part, table, mats) if mats else None
+            entry["frame"] = _bbox(artist, renderer, height_pt) if artist._idofig_drawn else None
+            entry["offset_in_matrix"] = styling.svg_offset(part)
+            own = mats.get(id(artist))
+            if own is not None:
+                entry["own_matrix"] = [round(v, 6) for v in own[1]]
+            host = hosts.get(n)
             if host is not None:
+                entry["matrix"] = [round(v, 6) for v in host[0]]
                 if entry["bbox"]:
                     entry["bbox"] = styling.map_box(entry["bbox"], host[0])
                 if host[1] != 1:
@@ -699,7 +718,7 @@ def _measure(fig, table, sreport, height_pt: float, mats: dict) -> tuple[dict, d
     for ax in fig.axes:
         an = table.axes_names.get(id(ax))
         if an:
-            axes[an] = _axes_info(ax, renderer, height_pt, mats)
+            axes[an] = _axes_info(ax, renderer, height_pt, {id(ax): (ax, *hosts[an])} if an in hosts else {})
     return parts, axes, roles
 
 
