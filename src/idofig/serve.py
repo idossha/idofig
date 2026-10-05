@@ -53,7 +53,7 @@ from . import props as P
 from . import scaffold
 from . import spec as S
 from ._version import __version__
-from .build import build, check, compliance, figure_status, status
+from .build import build, check, compliance, edit_lock, figure_status, status
 from .compose import compose
 from .errors import IdofigError, SpecError
 from .fsutil import loads, read_json, rel, sha256_file, write_atomic
@@ -142,7 +142,11 @@ class Server:
             self.send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"unknown method {method!r}"}})
             return
         try:
-            result = handler(rid, **params)
+            if method in _EDITS:
+                with edit_lock(self.project):
+                    result = handler(rid, **params)
+            else:
+                result = handler(rid, **params)
         except TypeError as exc:
             self.reply(rid, error=IdofigError(f"bad parameters for {method}: {exc}"))
             return
@@ -403,6 +407,10 @@ class _Deferred:
 
 
 _DEFERRED = _Deferred()
+
+# Methods that write figure.json or style.json: run under `edit_lock` (see there).
+_EDITS = frozenset({"update_figure", "update_style", "update_panel_style", "move_style", "restore",
+                    "new_figure", "add_panel"})
 
 
 def main(project: Project) -> int:

@@ -21,6 +21,7 @@ One user unit in every SVG idofig writes is one typographic point. All placement
     figure.lock.json        built, committed
   .idofig/                  machine-local; never committed (idofig writes its own .gitignore: *)
     build.lock              one builder per project at a time (an app's server and a terminal)
+    edit.lock               one writer of figure.json/style.json at a time (serve, rpc, `idofig style`)
     state.json              each producer's last failure, with the inputs it failed on
     staging/<run>/          a producer run's private output directory, removed after the run
 ```

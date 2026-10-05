@@ -4,12 +4,13 @@ import base64
 import io
 import json
 import re
+import threading
 import time
 
 from conftest import read, write
 
 from idofig import spec as S
-from idofig.build import build, status
+from idofig.build import build, edit_lock, status
 from idofig.compose import compose
 from idofig.fsutil import sha256_file
 from idofig.serve import Server
@@ -135,6 +136,30 @@ def test_serve_workspace_style_validation_undo_and_build(project):
                     expect_sha=after_sha)
     assert "changed since this edit" in reply["error"]["message"]
     assert sha256_file(project.figure_json("fig-1")) != after_sha
+
+
+def test_an_edit_waits_for_another_writer_instead_of_dropping_its_entry(project):
+    # Two processes (the app's serve, an agent's `idofig rpc`) read-merge-write one style.json;
+    # without the lock the later write dropped the earlier one's entry. Holding the lock here
+    # stands in for the other process: the edit must wait, then merge onto what it finds.
+    build(project)
+    srv = Server(project, out=io.StringIO())
+    style = project.panel_dir("fig-1", "a") / "style.json"
+    done = threading.Event()
+
+    def edit():
+        _rpc(srv, "update_style", figure="fig-1", panel="a", part="main.xlabel", props={"fontsize": 9})
+        done.set()
+
+    with edit_lock(project):
+        worker = threading.Thread(target=edit)
+        worker.start()
+        assert not done.wait(0.5), "update_style wrote while another writer held the edit lock"
+        S.update_style(style, "main.ylabel", {"fontsize": 7})  # the other writer's entry
+    worker.join(30)
+    assert done.is_set()
+    parts = json.loads(read(style))["parts"]
+    assert parts["main.ylabel"] == {"fontsize": 7} and parts["main.xlabel"] == {"fontsize": 9}
 
 
 def test_locate_finds_the_line_that_makes_a_part(project):

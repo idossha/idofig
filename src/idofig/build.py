@@ -117,6 +117,25 @@ def project_lock(project: Project):
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 
+@contextlib.contextmanager
+def edit_lock(project: Project):
+    """One writer of figure.json / style.json per project at a time.
+
+    Every edit reads fresh, merges and writes atomically, but read-merge-write is not atomic
+    across processes: SUNA's long-lived `serve` and an agent's one-shot `idofig rpc` (or a
+    terminal's `idofig style`) could both read the same style.json, and the second write
+    silently dropped the first one's entry. The undo pre-image (`before`) and `restore`'s
+    sha check are read under the same lock, so neither can interleave with another writer.
+    A separate file from build.lock so an edit never waits on a long build."""
+    path = project.state_dir / "edit.lock"
+    with open(path, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 # ----------------------------------------------------------------------------- fingerprints
 
 

@@ -15,6 +15,14 @@ Releases before 0.7.0 are described in their commit messages (`git log`) and in 
   printed scale. Render 3 refreshes old manifests. Named images gain a stable outer group containing
   their native flip and clipping; unedited vector drawing remains unchanged.
 
+### Fixed
+
+- **Two writers no longer lose an edit.** An app's `serve`, a one-shot `idofig rpc` and
+  `idofig style` each read, merged and wrote `style.json` / `figure.json` with nothing between
+  them, so two at once could drop one's entry. Edits now take `.idofig/edit.lock` (separate
+  from `build.lock`, so an edit never waits on a build); undo's pre-image and `restore`'s check
+  are read under it too.
+
 ### Changed
 
 - Geometry no longer imposes arbitrary offset, rotation or scale ranges. Values must be finite

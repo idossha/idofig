@@ -11,7 +11,7 @@ from . import journals as J
 from . import scaffold
 from . import spec as S
 from ._version import __version__
-from .build import build, check, status
+from .build import build, check, edit_lock, status
 from .compose import compose
 from .errors import IdofigError
 from .fsutil import read_json, rel
@@ -187,6 +187,11 @@ def cmd_add_panel(args) -> int:
 
 def cmd_style(args) -> int:
     project = find_project()
+    with edit_lock(project):  # a running `serve` may be writing the same style.json
+        return _style(project, args)
+
+
+def _style(project, args) -> int:
     path = project.panel_dir(args.figure, args.panel) / "style.json"
     if args.reset:
         S.update_style(path, args.part, None)
