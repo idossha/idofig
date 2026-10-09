@@ -57,6 +57,7 @@ All under `src/idofig/`.
 | file | what |
 |---|---|
 | `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
+| `meshes.py` | `idofig.mesh` (0.11.0): reads a mesh file with trimesh (imported there only), draws it on a 3D axes as a `MeshCollection`: smoothed normals, a headlight recomputed from the view at every draw, and its own vectorized projection (matplotlib's, for all triangles at once; equal-depth faces in the file's order); named `<axes>.mesh.<name>` |
 | `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context`; `panels` selects the Agg backend unless it runs in a session, `save` draws on an Agg canvas of its own, lays a panel out, moves offset parts, keeps named rasterized parts' names, measures only what was drawn (with the SVG's text metrics, not Agg's), then puts back what it changed to write the panel (canvas, dpi, size, layout, placements, moves, wrapped draws); style overrides stay set on the script's figure |
 | `naming.py` | the part-naming grammar; legend entries joined to their series by artist |
 | `marks.py` | what data marks drew (`data`), axes `anchors`/`categories`, mark ids and data attributes in panel.svg, the `build` hint (0.10.0) |
@@ -70,7 +71,7 @@ All under `src/idofig/`.
 | `journals.py`, `journals/` | journal figure presets (column widths, font floors, line weights, panel-label style); one JSON per bundled journal, copied from SUNA's sourced profiles |
 | `serve.py`, `cli.py` | JSON-RPC server for apps; the command line |
 | `locate.py`, `scaffold.py` | "where is this part made"; `init`, `new` and `add-panel` |
-| `templates/` | the producer scripts `add-panel --template` copies: bar, line, scatter, heatmap, blank |
+| `templates/` | the producer scripts `add-panel --template` copies: bar, line, scatter, heatmap, blank, mesh (`--mesh`) |
 | `fonts/` | the bundled Liberation Sans faces and their licence (`OFL.txt`) |
 | `units.py` | physical units: one SVG user unit is one typographic point |
 | `fsutil.py` | small file helpers: atomic writes, canonical JSON (strict: no NaN or Infinity either way; a file that is not JSON is an error naming it), hashing |
@@ -79,4 +80,9 @@ All under `src/idofig/`.
 
 ## Writing producers (for agents working in a project)
 
-See `docs/producers.md`.
+See `docs/producers.md`. A 3D mesh is input data, like a `.npy`: list the file in the
+producer's `inputs`, draw it on a 3D axes with `idf.mesh(ax, "data/head.glb")` (part
+`main.mesh.head`; `scalars=`/`cmap=`/`color=` colour it, otherwise its own vertex colours; it is
+lit smoothly over shared vertices, `smooth=False` for flat facets), and
+never set the view in the script — `elev`, `azim`, `roll`, `zoom` and `proj` on the 3D axes in
+style.json are where an editor or an agent turns it.

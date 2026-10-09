@@ -11,7 +11,8 @@ from .errors import IdofigError
 from .fsutil import rel, write_atomic, write_json
 from .project import Project, check_id
 
-TEMPLATES = ("bar", "line", "scatter", "heatmap", "blank")
+TEMPLATES = ("bar", "line", "scatter", "heatmap", "blank", "mesh")
+MESH_SUFFIXES = (".glb", ".gltf", ".stl", ".ply", ".obj")  # what idofig.mesh reads (with trimesh)
 GAP_MM = 4.0
 
 
@@ -100,12 +101,31 @@ def add_image_panel(project: Project, fid: str, pid: str, image: str, *, place: 
     return {"figure": fid, "panel": pid, "script": None, "created": None, "image": entry["image"]}
 
 
-def add_panel(project: Project, fid: str, pid: str, *, template: str = "bar", script: str | None = None,
-              place: dict | None = None, letter: str | None = "auto") -> dict:
-    """Register a panel and (unless ``script`` names an existing producer) write a producer for it."""
+def _mesh_input(project: Project, mesh: str) -> str:
+    """``mesh`` as the project-relative path a producer reads and lists in its inputs."""
+    src = (project.root / mesh).resolve()
+    if project.root.resolve() not in src.parents:
+        raise IdofigError(f"{mesh} is outside the project; copy it in (data/, say) first")
+    if src.suffix.lower() not in MESH_SUFFIXES:
+        raise IdofigError(f"{mesh}: a mesh is one of {', '.join(MESH_SUFFIXES)}")
+    if not src.is_file():
+        raise IdofigError(f"{mesh} does not exist")
+    return rel(src, project.root)
+
+
+def add_panel(project: Project, fid: str, pid: str, *, template: str | None = None, script: str | None = None,
+              place: dict | None = None, letter: str | None = "auto", mesh: str | None = None) -> dict:
+    """Register a panel and (unless ``script`` names an existing producer) write a producer for it.
+    ``template="mesh"`` (implied by ``mesh``) draws the mesh file ``mesh`` on a 3D axes."""
     check_id("panel", pid)
+    template = template or ("mesh" if mesh is not None else "bar")
     if template not in TEMPLATES:
         raise IdofigError(f"unknown template {template!r}; choose from {', '.join(TEMPLATES)}")
+    if (template == "mesh") != (mesh is not None):
+        raise IdofigError("the mesh template needs a mesh file (--mesh), and only it takes one")
+    if mesh is not None and script:
+        raise IdofigError("a mesh writes a producer from the mesh template; it takes no script")
+    inputs = [_mesh_input(project, mesh)] if mesh is not None else []
     path = project.figure_json(fid)
     doc = S.load_figure(path)
     if S.panel_entry(doc, pid):
@@ -130,8 +150,10 @@ def add_panel(project: Project, fid: str, pid: str, *, template: str = "bar", sc
             raise IdofigError(f"{script} already exists; pass --script {script} to use it")
         text = resources.files("idofig").joinpath("templates", f"{template}.py").read_text(encoding="utf-8")
         text = text.replace("{{figure}}", fid).replace("{{panel}}", pid).replace("{{script}}", script)
+        if inputs:  # a path is a Python string literal in the code, plain text in the docstring
+            text = text.replace('"{{mesh}}"', repr(inputs[0])).replace("{{mesh}}", inputs[0])
         write_atomic(target, text)
         created = script
-        ops.append({"op": "producer.set", "id": pid, "run": ["python", script], "inputs": [], "panels": [pid]})
+        ops.append({"op": "producer.set", "id": pid, "run": ["python", script], "inputs": inputs, "panels": [pid]})
     S.update_figure(path, ops)
     return {"figure": fid, "panel": pid, "script": script, "created": created}

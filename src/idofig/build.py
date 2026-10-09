@@ -54,7 +54,10 @@ LOCK_SCHEMA = 1
 # another number, a panel is stale only while its builder's differs too; otherwise the producer's
 # own idofig drew it, and a rebuild changes nothing (stale, it was rebuilt forever): a warning.
 # 3, 0.9.0: common artist geometry. 4, 0.10.0: data attributes on bars and marks, named gridlines.
-RENDER = 4
+# 5, 0.11.0: a 3D axes' role is `axes3d` and its props carry its view (a 3D panel's manifest
+# changed with no input changed: unbumped, `check` failed it as not reproducible); a gid'd axes
+# has its role, not `author`.
+RENDER = 5
 
 
 def drawn_under(manifest: dict) -> int:

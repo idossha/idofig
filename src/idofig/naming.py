@@ -25,7 +25,8 @@ unlabelled artists                    ``main.line0``, ``main.patch3`` …       
 ====================================  ==============================================  ============
 
 A 3D axes' z axis is named like x and y: ``main.zlabel``, ``main.zaxis``, ``main.ztick.<text>``;
-its axes have the role ``axis3d``.
+its axes have the role ``axis3d``, and the 3D axes itself the role ``axes3d`` (0.11.0). A mesh
+drawn with ``idofig.mesh`` is ``main.mesh.<name or file stem>`` (role ``mesh``, semantic).
 Free text is named by its axes and its text (``fig.text`` by its text alone), so a script that
 draws its own tick labels with ``ax.text("5")`` more than once in one axes (or with
 ``fig.text`` on the figure) gets the same name twice; the second is ``….2`` (positional) and
@@ -219,11 +220,16 @@ def assign_structural(fig: Figure) -> PartTable:
     index = 0
     cbar_index = 0
     for ax in fig.axes:
+        # A 3D axes is its own role (0.11.0): only it takes a view (props.VIEW).
+        role = "axes3d" if getattr(ax, "name", None) == "3d" else "axes"
         if _author_gid(ax):
             name = _author_gid(ax)
+            # A gid names it; its role is still what it is (left "author", a gid'd 2D axes took
+            # a view and a gid'd 3D one was offered none).
+            t.add(name, ax, "colorbar" if _is_colorbar_axes(ax) else role, "author", kind="axes")
         elif getattr(ax, "_idofig_name", None):
             name = ax._idofig_name
-            t.add(name, ax, "axes", "named", kind="axes")
+            t.add(name, ax, role, "named", kind="axes")
         elif _is_colorbar_axes(ax):
             cbar = ax._colorbar
             given = getattr(cbar, "_idofig_name", None)
@@ -232,7 +238,7 @@ def assign_structural(fig: Figure) -> PartTable:
             t.add(name, ax, "colorbar", "named" if given else "positional", kind="axes")
         else:
             name = f"ax{index}"
-            t.add(name, ax, "axes", "positional", kind="axes")
+            t.add(name, ax, role, "positional", kind="axes")
         if not _is_colorbar_axes(ax):
             index += 1
         t.axes_names[id(ax)] = name
@@ -289,6 +295,12 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
         solids = getattr(cbar, "solids", None)
         if solids is not None:
             t.add(f"{p}.solids", solids, "colorbar-solids", "semantic", p)
+
+    # A mesh (idofig.mesh, 0.11.0) is named by what it was given or its file, never by order.
+    for coll in ax.collections:
+        mesh = getattr(coll, "_idofig_mesh", None)
+        if mesh is not None:
+            t.add(f"{p}.mesh.{mesh['name']}", coll, "mesh", "semantic", p)
 
     # Series: labelled containers, then labelled artists. Duplicate labels become a
     # group addressed by the label, with positional members.

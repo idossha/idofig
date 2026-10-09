@@ -235,7 +235,7 @@ geometry properties described below. Other properties by part kind:
 | patch | facecolor, edgecolor, color, linewidth, linestyle, alpha, visible, hatch |
 | collection | facecolor, edgecolor, color, linewidth, alpha, visible, size, cmap, vmin, vmax |
 | image | alpha, visible, cmap, vmin, vmax |
-| axes | facecolor, visible, dx_mm, dy_mm, scale, rotate |
+| axes | facecolor, visible, dx_mm, dy_mm, scale, rotate; a 3D axes also elev, azim, roll, zoom, proj |
 | axis | visible, tickdir (in\|out\|inout), ticklength (pt), tickwidth (pt) |
 | spine | visible, linewidth, color |
 | legend | visible, loc, frameon, fontsize, title, dx_mm, dy_mm, scale, rotate |
@@ -320,6 +320,20 @@ was drawn, naming rasterized parts) add no byte.
 layout. A 3D axis (role `axis3d`) refuses them: it draws its tick marks from its own
 settings, never from `tick_params`.
 
+**A 3D axes' view (0.11.0).** A 3D axes (role `axes3d`) takes its view from style.json, applied
+before layout like any other override, so an editor turns a mesh by writing a file and a
+rebuild draws it:
+
+| prop | value | applied as |
+|---|---|---|
+| `elev`, `azim`, `roll` | finite degrees, −180 … 180 | `ax.view_init(elev=…, azim=…, roll=…)`'s angles; the others and the vertical axis stay as the script set them (`view_init` itself resets what it is not given) |
+| `zoom` | 0.1 … 10 | `ax.set_box_aspect(<its aspect>, zoom=…)` |
+| `proj` | `ortho` \| `persp` | `ax.set_proj_type(…)`, only when it differs (a script's own focal length survives `persp`; a new `persp` has matplotlib's focal length 1) |
+
+A 2D axes (role `axes`) and a colorbar refuse them, `only a 3D axes has a view`; the manifest's
+`props` of a 3D axes carry the five as drawn (`zoom` read back from the box: its length over
+matplotlib's 1.8294640721620434, × 25/24 since 3.9).
+
 ## Part names
 
 See `src/idofig/naming.py` for the grammar. Stability classes, recorded per part:
@@ -350,7 +364,11 @@ style.json entry addresses one (it would be detached). A bar's index is position
 reordering and is what a consumer matches bars across two builds on.
 
 A 3D axes' z axis is named like the other two (`main.zlabel`, `main.zaxis`, `main.ztick.<text>`);
-its axes have the role `axis3d`. A 3D axis draws its pane and grid in groups of their own,
+its axes have the role `axis3d`, and the 3D axes itself the role `axes3d` (0.11.0; a 2D axes is
+`axes`, a colorbar's `colorbar`, whatever names them, a gid included). A mesh drawn with
+`idofig.mesh` is `<axes>.mesh.<name>` — the `name=` it was given, else its file's stem, as a slug
+(`main.mesh.cortex`) — role `mesh`, `semantic`; a second one of the same name on that axes is
+`….2`, positional, and reported. A 3D axis draws its pane and grid in groups of their own,
 which carry no id, so each part's id is in the SVG once.
 
 A rasterized part (`rasterized=True`) with a name that is not positional — an author gid, a
@@ -363,7 +381,7 @@ one, like any part that is not drawn, has no id in the SVG.
 ## manifest.json — schema 1
 
 `{schema, figure, panel, render, size{w_pt,h_pt,w_mm,h_mm}, trim?{x_pt,y_pt,w_pt,h_pt}, parts{name: {kind, role,
-stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, effective_scale?, base?, data?, series?}},
+stability, parent?, group?, members?, bbox, drawn?, props?, thinnest_pt?, effective_scale?, base?, data?, series?, mesh?}},
 axes{name: {bbox, frame?, matrix?, xscale, yscale, xlim, ylim, anchors?, categories?}}, build[{stage, parts, entrance}],
 style{applied, detached, invalid}, warnings}` — `render` is the `build.RENDER` of
 the idofig that drew the panel (absent: 0.2.x). `trim` (a trimmed panel only) is the crop in
@@ -460,6 +478,13 @@ A legend entry made from the axes' labelled artists (`ax.legend()`, `fig.legend(
 artist in the same place of `get_legend_handles_labels()`, used only when the legend's texts
 are those labels one for one — never by text: a legend of hand-picked handles has no `series`.
 
+**Mesh (0.11.0).** A part `idofig.mesh` drew carries `mesh: {path, faces, vertices, bounds}`:
+the file, relative to the project root in POSIX form (absolute when it is outside the project);
+the triangles and vertices it drew (vertices as the file stores them: an STL stores three per
+facet); and `bounds`, `[[xmin, ymin, zmin], [xmax, ymax, zmax]]` of the triangles in data
+coordinates after the file's node transforms, rounded to 6 decimals. An editor loads the file
+by `path` to show it in 3D, and the bounds are the box the panel frames.
+
 **Anchors (0.10.0).** An axes of a flat projection gives, per linear or log axis, two
 `[data, point]` pairs read from matplotlib's data transform at its limits: `anchors: {x: [[x0,
 px0], [x1, px1]], y: [[y0, py0], [y1, py1]]}`, in the same points as `bbox` (y down, from the
@@ -513,6 +538,12 @@ reads fresh; `check`, which runs the producer, then reports ``drawn by idofig 0.
 1); its producer now draws with render 2 — `idofig build --force <fig>` redraws it`` rather
 than "not reproducible".
 
+**Upgrading to 0.11.0.** Render 5: every panel is stale once. A 3D axes' role is `axes3d`, not
+`axes`, and its `props` gain `elev`, `azim`, `roll`, `zoom`, `proj`; an axes named by a gid has
+the role it is (`axes`, `axes3d` or `colorbar`), where it had `author`. Nothing is drawn
+differently and no name changes: only manifests change. Unbumped, a 3D panel built by 0.10.0
+read fresh while `check`, which redraws it, failed it as not reproducible.
+
 **Upgrading to 0.10.0.** Render 4: every panel is stale once. Bars, scatters, marker lines
 and drawn grids gain data attributes, mark ids and gridline names in panel.svg; nothing is
 drawn differently, no existing name changes, and a panel with none of them keeps its bytes.
@@ -547,6 +578,61 @@ moved to `<gid>.<entry>`; an axes legend's had none. Its manifest:
   measured them on Agg at 72 dpi);
 * may gain a font warning, which `check` reports: a text in a generic family (`sans-serif`,
   `serif`, …) is checked as the face it resolves to (see Determinism).
+
+## Meshes (0.11.0)
+
+`idofig.mesh(ax, path, *, name=None, color=None, scalars=None, cmap="viridis", vmin=None,
+vmax=None, shade=True, smooth=True, alpha=None, rasterized=None)` draws a triangle mesh file on a 3D axes
+(`add_subplot(projection="3d")`; any other axes is an error) and returns its collection. The
+file is input data the producer reads, like a `.npy` — never a figure format: list it in the
+producer's `inputs`, or editing it leaves the panel fresh.
+
+* `path`: `.glb`, `.gltf`, `.stl`, `.ply` or `.obj`, relative to the producer's working
+  directory (the project root under `build`) or absolute, read with trimesh (a dependency
+  imported only by `idofig.mesh`; `import idofig`, composing and the server never import it).
+  A scene is flattened with each node's transform applied, nodes in name order. Vertices are
+  kept as stored (none merged), so a per-vertex field computed for the file matches it.
+  Triangles only; a scene's point clouds and paths are skipped, and a file with no triangle
+  is an error.
+* Colour, first that applies: `scalars` — one value per vertex (averaged over each face's
+  three) or one per face (per vertex when the counts are equal), through `cmap`, `vmin`,
+  `vmax` (style.json's collection `cmap`/`vmin`/`vmax` override them) — then `color`, then the
+  file's own vertex or face colours (a glTF material sampled to colours), then `#c8c8c8`.
+* `shade=True` is a headlight: at every draw each face is `rgb × (0.35 + 0.65·|n·v|)`, n its
+  normal and v the direction to the viewer under the axes' current elev, azim and roll (in
+  the axes' box, where a normal is scaled by the inverse of the box's stretch), so a view set
+  in style.json is lit from the front.
+* `smooth=True` lights each face by a normal smoothed over its neighbours, not its own (lit
+  flat, the small irregular triangles of a cortical surface come out speckled): each vertex's
+  normal is the sum of the unnormalized normals (twice the area) of the faces around it,
+  normalized, and a face's is the sum of its three corners', each first turned to the face's
+  side. A face none of whose vertices another face shares (an STL's: three of its own per
+  facet), or whose smoothed normal vanishes, keeps its own. The sums assume the file winds its
+  faces consistently, as a manifold export does; where neighbours are wound oppositely a
+  vertex's normal is partly cancelled, which no rule can mend without knowing the outside.
+  `smooth=False` lights every face flat. Colours stay one per face.
+* The projection is the one matplotlib draws, made for all triangles at once: the corners
+  through `np.dot(M, …)`, a face's depth by the collection's zsort (the mean of its corners'),
+  furthest first, the same 2D triangles, colours and returned zorder (a test compares them
+  with matplotlib's own). Faces of equal depth are drawn in the file's order, as matplotlib
+  before 3.11 draws them; 3.11's sort is not stable, and its order for a tie could differ by
+  CPU. A collection clipped to the view (`axlim_clip`), with path codes or a fixed sort depth,
+  or on a non-linear axis is projected by matplotlib itself. matplotlib before 3.11 projects
+  face by face in Python: a 149k-face mesh's build took 12–14 s under 3.10.9 and takes 2.9 s.
+* The axes' limits become the bounds of every mesh drawn on it so far (a flat mesh gets a
+  thousandth of its largest extent across) and its box aspect their extents, one scale for x,
+  y and z, at the axes' current zoom. Axis visibility is the script's (`ax.set_axis_off()`).
+* No edges are drawn. Past `MESH_VECTOR_FACES` = 20 000 faces (`rasterized=None`) the mesh is
+  rasterized — at `savefig.dpi`, 600 or the journal's `minDpi` if higher — with antialiasing
+  off, which leaves no seams between triangles; it keeps its name in panel.svg (one `<image>` in
+  `<g id="main.mesh.cortex">`). A vector mesh's triangles may show hairline seams where an SVG
+  viewer antialiases each one.
+* matplotlib sorts a 3D axes' collections as wholes: two meshes that pass through each other
+  are drawn one over the other. Put such meshes in one file.
+
+`idofig add-panel FIG PANEL --mesh <project file>` (the RPC's `add_panel` with `mesh`; the
+`mesh` template, implied) writes a producer that draws the file on a 3D axes named `main`,
+axis off, with the file in its `inputs`. The file must be inside the project.
 
 ## Determinism
 

@@ -149,6 +149,8 @@ OFFSETS = ("dx_mm", "dy_mm")
 TRANSFORMS = ("scale", "rotate")
 _ROTATE = _num(unit="deg")
 TICK_MARKS = ("tickdir", "ticklength", "tickwidth")
+# A 3D axes' view (0.11.0), applied before layout; an editor that orients a mesh writes them.
+VIEW = ("elev", "azim", "roll", "zoom", "proj")
 
 PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
     "text": {
@@ -168,7 +170,10 @@ PROPS: dict[str, dict[str, Callable[[Any], str | None]]] = {
         "visible": _bool, "size": _num(0, 10000), "cmap": _cmap, "vmin": _num(), "vmax": _num(),
     },
     "image": {"alpha": _ALPHA, "visible": _bool, "cmap": _cmap, "vmin": _num(), "vmax": _num()},
-    "axes": {"facecolor": _color, "visible": _bool},
+    "axes": {
+        "facecolor": _color, "visible": _bool, "elev": _num(-180, 180, "deg"), "azim": _num(-180, 180, "deg"),
+        "roll": _num(-180, 180, "deg"), "zoom": _num(0.1, 10), "proj": _enum({"ortho", "persp"}),
+    },
     "axis": {"visible": _bool, "tickdir": _enum({"in", "out", "inout"}), "ticklength": _WIDTH, "tickwidth": _WIDTH},
     "spine": {"visible": _bool, "linewidth": _WIDTH, "color": _color},
     "legend": {
@@ -182,6 +187,8 @@ SINGLE_ONLY = {"text", "title"}
 # Geometry is available for every artist; only unsupported matplotlib setters are refused.
 REFUSED_BY_ROLE = {
     "axis3d": dict.fromkeys(TICK_MARKS, "a 3D axis draws its tick marks from its own settings, not from tick_params"),
+    "axes": dict.fromkeys(VIEW, "only a 3D axes has a view"),
+    "colorbar": dict.fromkeys(VIEW, "only a 3D axes has a view"),
 }
 
 

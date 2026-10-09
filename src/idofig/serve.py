@@ -26,9 +26,10 @@ restore       {path, text, expect_sha}  → restores a file for undo, only if un
                                           {restored, sha, previous, compose}: previous is the
                                           text it replaced (for redo)
 new_figure    {figure, width?, extra?}  → {path}
-add_panel     {figure, panel, template?, script?, image?, place?, letter?}
+add_panel     {figure, panel, template?, script?, image?, place?, letter?, mesh?}
                                         → {figure, panel, script, created} (image: a project
-                                          file, placed as it is)
+                                          file, placed as it is; mesh: a project mesh file the
+                                          "mesh" template draws, listed in its inputs)
 check         {figures?, run?}          → CI's verdict: fresh, reproducible, within the journal's rules
 parts         {figure, panel}           → the panel's manifest parts
 locate        {figure, panel, part}     → candidate code lines that make the part
@@ -368,11 +369,12 @@ class Server:
         compose(self.project, figure, write=True)
         return {"path": rel(path, self.project.root)}
 
-    def m_add_panel(self, rid, figure, panel, template="bar", script=None, place=None, letter="auto", image=None):
+    def m_add_panel(self, rid, figure, panel, template=None, script=None, place=None, letter="auto", image=None,
+                    mesh=None):
         if image:
             return scaffold.add_image_panel(self.project, figure, panel, image, place=place, letter=letter)
         return scaffold.add_panel(self.project, figure, panel, template=template, script=script, place=place,
-                                  letter=letter)
+                                  letter=letter, mesh=mesh)
 
     def m_check(self, rid, figures=None, run=True):
         return check(self.project, figures, run=bool(run)).to_json()

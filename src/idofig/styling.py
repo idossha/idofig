@@ -158,7 +158,7 @@ def _get_props(artist: Any, kind: str) -> dict:
                     "vmin": _num(vmin, 6), "vmax": _num(vmax, 6)}
         if kind == "axes":
             return {"facecolor": _hex(artist.get_facecolor()), "visible": artist.get_visible(), **_offsets(artist),
-                    **_transform(artist)}
+                    **_transform(artist), **(_view(artist) if getattr(artist, "name", None) == "3d" else {})}
         if kind == "axis":
             tick = artist.majorTicks[0]  # the tick every later one copies its settings from
             return {"visible": artist.get_visible(), "tickdir": tick.get_tickdir(),
@@ -176,6 +176,34 @@ def _get_props(artist: Any, kind: str) -> dict:
     except Exception:  # a getter a third-party artist does not implement
         return {}
     return {}
+
+
+def view_zoom(ax) -> float:
+    """A 3D axes' zoom, read back from its box: ``set_box_aspect(aspect, zoom)`` stores the aspect
+    scaled to ``K * zoom`` long, K being 1.8294640721620434 (matplotlib 3.2's look), times 25/24
+    since 3.9 (its automargin change)."""
+    import matplotlib
+
+    k = 1.8294640721620434 * (25 / 24 if tuple(int(v) for v in matplotlib.__version__.split(".")[:2]) >= (3, 9) else 1)
+    return float(np.linalg.norm(ax._box_aspect)) / k
+
+
+def _view(ax) -> dict:
+    """A 3D axes' view as drawn: what style.json's ``elev`` … ``proj`` set (0.11.0)."""
+    return {"elev": _num(ax.elev), "azim": _num(ax.azim), "roll": _num(ax.roll), "zoom": _num(view_zoom(ax), 6),
+            "proj": "ortho" if ax._focal_length == math.inf else "persp"}
+
+
+def _set_view(ax, key: str, value: Any) -> None:
+    if key == "proj":
+        if value != _view(ax)["proj"]:  # set again, a script's own focal length went back to 1
+            ax.set_proj_type(value)
+    elif key == "zoom":
+        ax.set_box_aspect(ax._roll_to_vertical(ax._box_aspect), zoom=value)
+    else:
+        # What `view_init(elev=…)` stores; called, it reset the angles it was not given to the
+        # axes' initial ones and its vertical axis to z.
+        setattr(ax, key, float(value))
 
 
 def get_props(artist: Any, kind: str) -> dict:
@@ -262,7 +290,10 @@ def _set(artist: Any, kind: str, key: str, value: Any) -> None:
         else:
             {"alpha": artist.set_alpha, "visible": artist.set_visible}[key](value)
     elif kind == "axes":
-        {"facecolor": artist.set_facecolor, "visible": artist.set_visible}[key](value)
+        if key in P.VIEW:
+            _set_view(artist, key, value)
+        else:
+            {"facecolor": artist.set_facecolor, "visible": artist.set_visible}[key](value)
     elif kind == "axis":
         if key == "visible":
             artist.set_visible(value)

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from importlib import resources
 
-import matplotlib
-
 FONT_FAMILY = "Liberation Sans"
 # How the font is named in the SVG: Arial on machines that have it (identical metrics),
 # the bundled face everywhere else.
@@ -93,6 +91,7 @@ def rc_for(journal: dict) -> dict:
 
 def apply_rc(journal: dict) -> None:
     """Reset to matplotlib defaults, then apply the journal preset."""
+    import matplotlib  # here, not at the top: compose reads SVG_FONT_STACK and must not import it (rule 7)
     import matplotlib.pyplot as plt  # noqa: F401  (pyplot owns the global rc state people use)
 
     register_fonts()

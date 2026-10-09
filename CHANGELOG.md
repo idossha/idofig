@@ -4,6 +4,38 @@ What changed for people who make figures with idofig, newest first. The format f
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow `src/idofig/_version.py`.
 Releases before 0.7.0 are described in their commit messages (`git log`) and in SPEC.md.
 
+## [0.11.0] — unreleased
+
+### Added
+
+- **A 3D mesh is a panel you can turn without touching the script.** `idf.mesh(ax,
+  "data/cortex.ply", scalars=field, cmap="inferno")` draws a `.glb`, `.gltf`, `.stl`, `.ply` or
+  `.obj` on a 3D axes — coloured by a field per vertex or per face, by one colour, or by the
+  file's own colours — lit from the viewer and smoothly over its shared vertices (`smooth=False`
+  for flat facets), framed to its bounds on one scale, and rasterized
+  at print resolution past 20 000 faces, keeping its name (`main.mesh.cortex`). The view is
+  five style.json properties on the 3D axes — `elev`, `azim`, `roll`, `zoom`, `proj` — so an
+  editor or `idofig style fig-3 brain main elev=10 azim=-90` turns it and a rebuild redraws it
+  lit from the new side. **`idofig add-panel FIG PANEL --mesh data/head.glb`** (or the server's
+  `add_panel` with `mesh`) writes the producer and lists the mesh in its inputs, so editing the
+  mesh file makes the panel stale. The manifest says which file a mesh part drew, with its face
+  and vertex counts and bounds. idofig now depends on trimesh, which only `idf.mesh` imports. A
+  150 000-face surface builds in about 3 s under matplotlib 3.8 to 3.11 (matplotlib before 3.11
+  alone took 12–20 s: idofig projects the triangles itself, drawing what matplotlib draws).
+
+### Changed
+
+- Upgrading makes every panel stale once (render 5). A 3D axes' part has the role `axes3d`
+  and its manifest props carry its view; an axes named by a `gid` has its role (`axes`,
+  `axes3d`, `colorbar`) rather than `author`, so a view set on a 2D axes or a colorbar is
+  refused ("only a 3D axes has a view") and reported. Nothing is drawn differently and no name
+  changes.
+
+### Fixed
+
+- `import idofig.compose` (and so the server and the command line) no longer imports
+  matplotlib.
+
 ## [0.10.0] — unreleased
 
 ### Added

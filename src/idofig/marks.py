@@ -313,7 +313,7 @@ def build_steps(fig, table: PartTable, parts: dict) -> list[dict]:
             stages["grid"].append(part)
         elif role in _SCAFFOLD:
             stages["scaffold"].append(part)
-        elif role == "series" or role in _MARKS or (role == "author" and kind in _MARKS):
+        elif role in ("series", "mesh") or role in _MARKS or (role == "author" and kind in _MARKS):
             stages["data"].append(part)
         elif role == "text" or (role == "author" and kind == "text"):
             stages["annotation"].append(part)

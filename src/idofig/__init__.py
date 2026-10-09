@@ -13,7 +13,7 @@ from ._version import __version__
 
 _DRAW = {"panels", "panel", "name", "colorbar", "save", "mm", "pt", "axes_mm", "resolve_context"}
 
-__all__ = ["__version__", *sorted(_DRAW)]
+__all__ = ["__version__", *sorted(_DRAW | {"mesh"})]
 
 
 def __getattr__(attr: str):
@@ -21,4 +21,8 @@ def __getattr__(attr: str):
         from . import draw
 
         return getattr(draw, attr)
+    if attr == "mesh":  # its module is `meshes`: a submodule named `mesh` would shadow the function
+        from .meshes import mesh
+
+        return mesh
     raise AttributeError(f"module 'idofig' has no attribute {attr!r}")

@@ -56,6 +56,20 @@ graphics, so it is what makes a figure reproducible.
    select; unlabelled ones (per-trial traces) merge into one unnamed image, as small as
    matplotlib makes it.
 
+   A 3D mesh (`.glb .gltf .stl .ply .obj`) is data the producer reads: list it in `inputs`
+   and draw it with `idf.mesh(ax, "data/cortex.ply", scalars=field, cmap="inferno",
+   name="cortex")` on an axes made with `add_subplot(projection="3d")` (the part is
+   `main.mesh.cortex`). `scalars` has one value per vertex (averaged per face) or per face;
+   without it, `color=`, else the file's own colours, else grey. The mesh is lit from the
+   viewer whatever the view — smoothly, each face by the normals of the vertices it shares
+   with its neighbours (`smooth=False` lights each facet flat; an STL, whose facets share no
+   vertex, is lit flat either way) — the axes' limits and box fit it on one scale, and past 20 000
+   faces it is rasterized at the journal's dpi, keeping its name. Several meshes on one axes
+   are sorted as wholes (matplotlib has no depth buffer): a mesh that passes through another
+   belongs in one file. Leave the view out of the script: `elev`, `azim`, `roll`, `zoom`,
+   `proj` on the 3D axes in style.json turn it (`idofig style fig-3 brain main elev=10
+   azim=-90`). `idofig add-panel fig-3 brain --mesh data/cortex.ply` writes such a producer.
+
 4. **Be deterministic.** Seed every random generator; do not print timestamps into the
    figure; read inputs from files, not from the network. Keep to the bundled font (the
    default) or one that ships with matplotlib (DejaVu Sans Mono, say); any other font is
@@ -124,7 +138,7 @@ survives new data:
 
 | rung | where | for |
 |---|---|---|
-| 1. restyle, nudge or turn a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend; `rotation` on a text, `rotate` on a legend | a label, a title, a legend in the wrong place or at the wrong angle |
+| 1. restyle, nudge or turn a part | `style.json` `fontsize`, `color`, … ; `dx_mm`/`dy_mm` on a text or legend; `rotation` on a text, `rotate` on a legend; `elev`/`azim`/`roll`/`zoom`/`proj` on a 3D axes | a label, a title, a legend in the wrong place or at the wrong angle; a mesh seen from the wrong side |
 | 2. space the axes | `style.json` `layout` (`hspace_mm`, `wspace_mm`, `pad_mm`) | gaps in a constrained panel |
 | 3. crop the empty margin | `style.json` `trim` / `trim_mm` | white space around the ink |
 | 4. move, scale or turn an axes or a group of axes | `style.json` `dx_mm`/`dy_mm`, `scale`, `rotate` on its name or a pattern (`*.regions`) | rearranging within a panel, closing a gap in a `layout=None` panel, a montage drawn a little too large or at a tilt |

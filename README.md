@@ -68,6 +68,19 @@ idf.save(p)                               # names parts, applies style.json, wri
 `idofig build` runs producers with a private output directory and publishes only after the
 run succeeds; a direct `python dose.py` publishes in place and recomposes the figure.
 
+A 3D mesh (0.11.0) is drawn from a `.glb`, `.gltf`, `.stl`, `.ply` or `.obj` the producer reads
+(list it in the producer's `inputs`), lit from the viewer, rasterized past 20 000 faces:
+
+```python
+ax = p["brain"].add_subplot(projection="3d"); idf.name(ax, "main")
+idf.mesh(ax, "data/cortex.ply", scalars=field, cmap="inferno", name="cortex")  # part main.mesh.cortex
+ax.set_axis_off()
+```
+
+Its view is a style override on the 3D axes (`main`: `elev`, `azim`, `roll`, `zoom`, `proj`),
+so an editor turns the mesh by writing style.json, and a rebuild draws it from there.
+`idofig add-panel FIG PANEL --mesh data/head.glb` writes such a producer.
+
 ## figure.json (schema 2, or 3)
 
 ```json
@@ -141,6 +154,7 @@ Every refinement is a small named delta that survives the script being re-run:
 | any named artist's size and angle | `style.json` `scale` (positive factor), `rotate` (clockwise) | factor, degrees |
 | a text's typography angle | legacy `style.json` `rotation` (counter-clockwise, as matplotlib) | degrees |
 | an axis' tick marks | `style.json` on `main.xaxis`: `tickdir`, `ticklength`, `tickwidth` | pt |
+| a 3D axes' view (0.11.0) | `style.json` on `main`: `elev`, `azim`, `roll`, `zoom`, `proj` (`ortho`\|`persp`) | degrees, factor |
 | marks over the figure | `figure.json` `annotations` | mm, anchored to parts or data |
 | the gaps between a panel's axes | `style.json` `layout`: `hspace_mm`, `wspace_mm`, `pad_mm` | mm |
 | a panel's empty margin | `style.json` `trim: true` or `trim_mm` | mm |
@@ -172,6 +186,10 @@ scatter or a marker line gets its own id, `main.series.cells.3`, with `data-inde
 finite point is drawn; otherwise the series stays one group and the manifest says why. Major
 gridlines are named after their tick (`main.xgrid.0-5`, group `main.xgrid.*`) and take styles
 like any line. See SPEC.md, *manifest.json*.
+
+Upgrading to 0.11.0 makes every panel stale once (render 5): a 3D axes' role is now `axes3d`
+and its props carry its view, and an axes named by a gid has its role rather than `author`;
+nothing is drawn differently.
 
 Upgrading to 0.10.0 makes every panel stale once (render 4): bars, scatters, marker lines and
 grids gain their attributes and ids; nothing is drawn differently, and no name changes.
@@ -226,7 +244,7 @@ once, through the same code, and prints `{result}` or `{error}`. Every method
 | `move_style` | `figure, panel, from, to` | re-attaches a detached override to a part's new name |
 | `restore` | `path, text, expect_sha` | undo: puts a figure.json or style.json back, only if unchanged since; answers the text it replaced (for redo) |
 | `new_figure` | `figure, width?, extra?` | creates a figure (`extra`: application keys) |
-| `add_panel` | `figure, panel, template?, script?, image?, place?, letter?` | adds a drawn panel (and a producer), or an image panel |
+| `add_panel` | `figure, panel, template?, script?, image?, place?, letter?, mesh?` | adds a drawn panel (and a producer), or an image panel; `mesh` (a project mesh file) writes the `mesh` template's producer with the file in its `inputs` |
 | `check` | `figures?, run?` | CI's verdict: fresh, reproducible, within the journal's rules |
 | `parts` | `figure, panel` | the panel's manifest parts |
 | `locate` | `figure, panel, part` | candidate code lines that make the part |

@@ -177,7 +177,7 @@ def cmd_add_panel(args) -> int:
         print(f"panel {args.panel} places {res['image']} — `idofig build {args.figure}` composes it")
         return 0
     res = scaffold.add_panel(project, args.figure, args.panel, template=args.template, script=args.script,
-                             place=_place(args.place))
+                             place=_place(args.place), mesh=args.mesh)
     if res["created"]:
         print(f"created {res['created']} — edit it, then `idofig build {args.figure}`")
     else:
@@ -346,7 +346,8 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("add-panel", help="add a panel (and a producer from a template)")
     p.add_argument("figure")
     p.add_argument("panel")
-    p.add_argument("--template", default="bar", choices=scaffold.TEMPLATES)
+    p.add_argument("--template", choices=scaffold.TEMPLATES, help="default: bar, or mesh with --mesh")
+    p.add_argument("--mesh", help="a project mesh file (.glb .gltf .stl .ply .obj) the mesh template draws")
     p.add_argument("--script", help="an existing producer script that will draw this panel too")
     p.add_argument("--image", help="place this project file (svg, png, jpg, gif, webp) as the panel, as it is")
     p.add_argument("--place", help="x,y,w,h in mm")

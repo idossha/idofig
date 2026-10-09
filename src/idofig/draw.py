@@ -594,6 +594,7 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         if named_mats:
             walk(ET.fromstring(svg_text))
         parts, axes, roles = _measure(fig, table, sreport, height_pt, mats, hosts)
+        _mesh_entries(table, parts, ctx.project.root)
         svg_text = marks.annotate(svg_text, table, parts)
         build = marks.build_steps(fig, table, parts)
 
@@ -634,6 +635,20 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
         # A value get_props did not clean (a NaN, an array) is named with its panel, not left a
         # bare encoder traceback.
         raise IdofigError(f"{ctx.figure_id}/{pid}: the manifest holds a value JSON cannot carry ({exc})") from None
+
+
+def _mesh_entries(table, parts: dict, root: Path) -> None:
+    """A mesh part's ``mesh`` (0.11.0): its file, project-relative (absolute when outside the
+    project), and the faces, vertices and bounds drawn from it, so an editor can load the file
+    and show the box the panel draws."""
+    for n, part in table.parts.items():
+        info = None if part.group else getattr(part.artists[0], "_idofig_mesh", None)
+        if info is None:
+            continue
+        inside = info["path"] == root.resolve() or root.resolve() in info["path"].parents
+        path = rel(info["path"], root.resolve()) if inside else info["path"].as_posix()
+        parts[n]["mesh"] = {"path": path, "faces": info["faces"], "vertices": info["vertices"],
+                            "bounds": info["bounds"]}
 
 
 def _trim(parts: dict, axes: dict, width_pt: float, height_pt: float, margin_pt: float) -> dict | None:
