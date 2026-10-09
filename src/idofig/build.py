@@ -56,8 +56,10 @@ LOCK_SCHEMA = 1
 # 3, 0.9.0: common artist geometry. 4, 0.10.0: data attributes on bars and marks, named gridlines.
 # 5, 0.11.0: a 3D axes' role is `axes3d` and its props carry its view (a 3D panel's manifest
 # changed with no input changed: unbumped, `check` failed it as not reproducible); a gid'd axes
-# has its role, not `author`.
-RENDER = 5
+# has its role, not `author`. 6, 0.12.0: a mesh of more than 100 000 faces is drawn simplified
+# (`idofig.mesh(max_faces=)`), and a mesh part's manifest carries `file_faces`/`file_vertices`:
+# a mesh panel drawn by 0.11.0 is drawn otherwise with no input changed.
+RENDER = 6
 
 
 def drawn_under(manifest: dict) -> int:

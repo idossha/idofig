@@ -7,8 +7,10 @@
 
 The file (``.glb .gltf .stl .ply .obj``) is input data the producer reads, like a ``.npy``: list it
 in the producer's ``inputs``. It is read with trimesh, imported here only, so ``import idofig`` and
-composing stay free of it. The view (``elev``, ``azim``, ``roll``, ``zoom``, ``proj``) is a style
-override on the 3D axes (styling.py), never a script edit; a rebuild draws the mesh from it.
+composing stay free of it. A mesh of more than ``max_faces`` (100 000) triangles is simplified
+before it is drawn (:func:`simplify`, fast-simplification's quadric decimation). The view
+(``elev``, ``azim``, ``roll``, ``zoom``, ``proj``) is a style override on the 3D axes (styling.py),
+never a script edit; a rebuild draws the mesh from it.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from .errors import IdofigError
+from .fsutil import write_atomic
 from .naming import slug
 from .scaffold import MESH_SUFFIXES
 from .styling import view_zoom
@@ -28,6 +31,9 @@ from .styling import view_zoom
 # More faces than this are drawn as one raster image (at savefig.dpi, 600 dpi or the journal's
 # floor if higher), which keeps the mesh's name in panel.svg: 200k vector triangles is tens of MB.
 MESH_VECTOR_FACES = 20_000
+# More faces than this are simplified before drawing: a 150k-face surface drawn whole is mostly
+# triangles smaller than a printed pixel, and every one of them is projected and sorted.
+MAX_FACES = 100_000
 DEFAULT_COLOR = "#c8c8c8"
 AMBIENT, DIFFUSE = 0.35, 0.65  # headlight: rgb * (AMBIENT + DIFFUSE * |n·v|)
 
@@ -180,9 +186,77 @@ def read_mesh(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     return np.concatenate(verts).astype(float), np.concatenate(faces), own
 
 
+def simplify(verts: np.ndarray, faces: np.ndarray, max_faces: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``verts``/``faces`` decimated to at most about ``max_faces`` triangles, and for each new
+    triangle the index of the file's triangle it is (its corners moved), so a value or colour per
+    face carries over exactly: quadric decimation only collapses edges, so every triangle left is
+    one of the file's whose three corners still map to three vertices, in the file's order.
+
+    Vertices at the same position are merged first (an STL stores three per facet; unmerged,
+    no edge could collapse) and zero-area triangles left out (they draw nothing). The same
+    input gives the same arrays (fast-simplification 0.1.7 and 0.1.8 did not on a process's first
+    call; 0.1.11 is the floor). When fast-simplification's
+    replay of its collapses does not give back the triangles it returned, which triangle each
+    came from is unknown and the colours would land on the wrong faces: refused."""
+    import fast_simplification
+
+    merged, inverse = np.unique(verts, axis=0, return_inverse=True)
+    tris = inverse.reshape(-1)[faces]
+    kept = np.flatnonzero((tris[:, 0] != tris[:, 1]) & (tris[:, 1] != tris[:, 2]) & (tris[:, 0] != tris[:, 2]))
+    # Only vertices a triangle uses, numbered densely: fast-simplification before 0.2.0 mapped
+    # every vertex after an unused one to the wrong index (its issue #60).
+    used, dense = np.unique(tris[kept], return_inverse=True)
+    merged, tris = merged[used], np.ascontiguousarray(dense.reshape(-1, 3), dtype=np.int64)
+    if len(tris) <= max_faces:
+        return merged, tris, kept
+    points, new_faces, collapses = fast_simplification.simplify(merged, tris, target_count=max_faces,
+                                                                return_collapses=True)
+    # The replay reads float32 points before 0.2.0; only its vertex mapping is used here.
+    to_new = fast_simplification.replay_simplification(merged.astype(np.float32), tris, collapses)[2]
+    mapped = to_new[tris]
+    alive = np.flatnonzero((mapped[:, 0] != mapped[:, 1]) & (mapped[:, 1] != mapped[:, 2])
+                           & (mapped[:, 0] != mapped[:, 2]))
+    if not np.array_equal(mapped[alive], new_faces):
+        raise IdofigError("simplifying the mesh lost track of which triangle each one came from, so its "
+                          "colours cannot follow: draw it with max_faces=None")
+    return np.asarray(points, dtype=float), np.asarray(new_faces, dtype=np.int64), kept[alive]
+
+
+def _check_faces(value, what: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
+        raise IdofigError(f"{what} must be a whole number ≥ 1 (got {value!r})")
+
+
+def simplify_file(src: Path, out: Path, faces: int) -> dict:
+    """Write ``src`` decimated to about ``faces`` triangles as ``out`` (.ply .glb .obj .stl), so a
+    project can commit a small surface: what ``idofig mesh-simplify`` does. The file's own
+    colours go along per face, which only .ply keeps (glTF has none per face, STL none at all):
+    with colours, any other ``out`` is refused rather than writing them away."""
+    import trimesh
+
+    _check_faces(faces, "faces")
+    src, out = Path(src), Path(out)
+    if not src.is_file():
+        raise IdofigError(f"{src} does not exist")
+    suffix = out.suffix.lower()
+    if suffix not in (".ply", ".glb", ".obj", ".stl"):
+        raise IdofigError(f"{out}: write .ply, .glb, .obj or .stl")
+    if out.resolve() == src.resolve():
+        raise IdofigError(f"{out} is the file being simplified: write the smaller mesh beside it")
+    verts, tris, own = read_mesh(src)
+    if own is not None and suffix != ".ply":
+        raise IdofigError(f"{src.name} has colours of its own, which only .ply keeps per face: write {out.stem}.ply")
+    new_verts, new_faces, source = simplify(verts, tris, faces)
+    colors = None if own is None else np.round(own[source] * 255).astype(np.uint8)
+    data = trimesh.Trimesh(new_verts, new_faces, face_colors=colors, process=False).export(file_type=suffix[1:])
+    write_atomic(out, data)
+    return {"file_faces": int(len(tris)), "file_vertices": int(len(verts)),
+            "faces": int(len(new_faces)), "vertices": int(len(new_verts))}
+
+
 def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="viridis", vmin=None,
          vmax=None, shade: bool = True, smooth: bool = True, alpha: float | None = None,
-         rasterized: bool | None = None):
+         rasterized: bool | None = None, max_faces: int | None = MAX_FACES):
     """Draw the triangle mesh in ``path`` (.glb .gltf .stl .ply .obj; relative to the producer's
     working directory, the project root) on the 3D axes ``ax``; returns the collection, named
     ``<axes>.mesh.<name or file stem>``.
@@ -192,7 +266,9 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
     vertex or face colours, else ``#c8c8c8``. ``shade`` lights it from the viewer at every draw,
     each face by the normal smoothed over its vertices' neighbours (``smooth``) or its own.
     The axes' limits become the bounds of its meshes and its box their extents (one scale for
-    x, y and z). More than ``MESH_VECTOR_FACES`` faces are rasterized unless ``rasterized`` says."""
+    x, y and z). More than ``max_faces`` faces are simplified to about that many first (:func:`simplify`;
+    ``None`` draws every one), each drawn face coloured as the file's face it was. More than
+    ``MESH_VECTOR_FACES`` drawn faces are rasterized unless ``rasterized`` says."""
     if getattr(ax, "name", None) != "3d":
         raise IdofigError("idofig.mesh draws on a 3D axes: make it with add_subplot(projection='3d')")
     path = Path(path)
@@ -200,8 +276,10 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
         raise IdofigError(f"{path}: a mesh is one of {', '.join(MESH_SUFFIXES)}")
     if not path.is_file():
         raise IdofigError(f"{path} does not exist (a relative path is read from the project root)")
+    if max_faces is not None:
+        _check_faces(max_faces, "max_faces (None draws every face)")
     verts, faces, own = read_mesh(path)
-    triangles = verts[faces]
+    file_counts = {"file_faces": int(len(faces)), "file_vertices": int(len(verts))}
     kwargs: dict = {"edgecolors": "none", "linewidths": 0}
     if scalars is not None:
         values = np.asarray(scalars, dtype=float)
@@ -211,6 +289,12 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
         face_values = values[faces].mean(axis=1) if len(values) == len(verts) else values
     else:
         face_values = None
+    if max_faces is not None and len(faces) > max_faces:
+        verts, faces, source = simplify(verts, faces, max_faces)
+        face_values = None if face_values is None else face_values[source]
+        own = None if own is None else own[source]
+    triangles = verts[faces]
+    if face_values is None:
         kwargs["facecolors"] = color if color is not None else (own if own is not None else DEFAULT_COLOR)
     rasterized = len(faces) > MESH_VECTOR_FACES if rasterized is None else rasterized
     # Rasterized, antialiased triangles leave hairline seams between them in the image.
@@ -228,6 +312,7 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
         "path": path.resolve(),
         "faces": int(len(faces)),
         "vertices": int(len(verts)),
+        **file_counts,
         "bounds": [[round(float(v), 6) for v in lo], [round(float(v), 6) for v in hi]],
     }
     ax.add_collection3d(coll)

@@ -4,6 +4,31 @@ What changed for people who make figures with idofig, newest first. The format f
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow `src/idofig/_version.py`.
 Releases before 0.7.0 are described in their commit messages (`git log`) and in SPEC.md.
 
+## [0.12.0] — unreleased
+
+### Added
+
+- **A huge mesh no longer makes a slow, heavy panel.** `idf.mesh` draws a file of more than
+  100 000 triangles simplified to about that many (`max_faces=`; `max_faces=None` draws every
+  one). The surface keeps its shape and its colours: each drawn triangle is one of the file's,
+  so a field per vertex or per face and the file's own colours land where they were. The same
+  file still builds the same bytes. A 152 000-face surface builds in 1.7 s at the default and
+  1.2 s at `max_faces=50_000`, against 2.1 s whole.
+- **`idofig mesh-simplify data/cortex.ply data/cortex-50k.ply --faces 50000`** writes the
+  smaller mesh as a file, so a project can commit a small surface instead of a huge one. A
+  `.ply` keeps the file's colours; `.glb`, `.obj` and `.stl` are written for a file without
+  colours. The original is never overwritten.
+- The manifest's `mesh` entry says how many triangles and vertices the file has
+  (`file_faces`, `file_vertices`) beside the ones drawn (`faces`, `vertices`, unchanged in
+  meaning).
+
+### Changed
+
+- Upgrading makes every panel stale once (render 6): a mesh panel drawn by 0.11.0 from a file
+  of more than 100 000 triangles is drawn differently now. Other panels are drawn as before.
+  idofig now depends on fast-simplification (a small compiled package with wheels for Linux,
+  macOS and Windows), which only a simplification imports.
+
 ## [0.11.0] — unreleased
 
 ### Added

@@ -478,11 +478,14 @@ A legend entry made from the axes' labelled artists (`ax.legend()`, `fig.legend(
 artist in the same place of `get_legend_handles_labels()`, used only when the legend's texts
 are those labels one for one — never by text: a legend of hand-picked handles has no `series`.
 
-**Mesh (0.11.0).** A part `idofig.mesh` drew carries `mesh: {path, faces, vertices, bounds}`:
-the file, relative to the project root in POSIX form (absolute when it is outside the project);
-the triangles and vertices it drew (vertices as the file stores them: an STL stores three per
-facet); and `bounds`, `[[xmin, ymin, zmin], [xmax, ymax, zmax]]` of the triangles in data
-coordinates after the file's node transforms, rounded to 6 decimals. An editor loads the file
+**Mesh (0.11.0).** A part `idofig.mesh` drew carries `mesh: {path, faces, vertices,
+file_faces, file_vertices, bounds}`: the file, relative to the project root in POSIX form
+(absolute when it is outside the project); the triangles and vertices it drew (vertices as the
+file stores them: an STL stores three per facet); the file's own triangles and vertices
+(0.12.0; equal to the drawn ones unless the mesh was simplified, see Meshes); and `bounds`,
+`[[xmin, ymin, zmin], [xmax, ymax, zmax]]` of the drawn triangles in data coordinates after
+the file's node transforms, rounded to 6 decimals (a simplified mesh's corners move a little,
+so its bounds may differ from the file's in the last digits). An editor loads the file
 by `path` to show it in 3D, and the bounds are the box the panel frames.
 
 **Anchors (0.10.0).** An axes of a flat projection gives, per linear or log axis, two
@@ -538,6 +541,12 @@ reads fresh; `check`, which runs the producer, then reports ``drawn by idofig 0.
 1); its producer now draws with render 2 — `idofig build --force <fig>` redraws it`` rather
 than "not reproducible".
 
+**Upgrading to 0.12.0.** Render 6: every panel is stale once. A mesh of more than 100 000
+triangles is drawn simplified (`max_faces`; pass `max_faces=None` to draw it whole, as 0.11.0
+did), and every mesh part's `mesh` gains `file_faces` and `file_vertices`. Other panels are
+drawn as before; unbumped, a large-mesh panel built by 0.11.0 read fresh while `check`, which
+redraws it, failed it as not reproducible.
+
 **Upgrading to 0.11.0.** Render 5: every panel is stale once. A 3D axes' role is `axes3d`, not
 `axes`, and its `props` gain `elev`, `azim`, `roll`, `zoom`, `proj`; an axes named by a gid has
 the role it is (`axes`, `axes3d` or `colorbar`), where it had `author`. Nothing is drawn
@@ -582,7 +591,8 @@ moved to `<gid>.<entry>`; an axes legend's had none. Its manifest:
 ## Meshes (0.11.0)
 
 `idofig.mesh(ax, path, *, name=None, color=None, scalars=None, cmap="viridis", vmin=None,
-vmax=None, shade=True, smooth=True, alpha=None, rasterized=None)` draws a triangle mesh file on a 3D axes
+vmax=None, shade=True, smooth=True, alpha=None, rasterized=None, max_faces=100_000)` draws a
+triangle mesh file on a 3D axes
 (`add_subplot(projection="3d")`; any other axes is an error) and returns its collection. The
 file is input data the producer reads, like a `.npy` — never a figure format: list it in the
 producer's `inputs`, or editing it leaves the panel fresh.
@@ -598,6 +608,33 @@ producer's `inputs`, or editing it leaves the panel fresh.
   three) or one per face (per vertex when the counts are equal), through `cmap`, `vmin`,
   `vmax` (style.json's collection `cmap`/`vmin`/`vmax` override them) — then `color`, then the
   file's own vertex or face colours (a glTF material sampled to colours), then `#c8c8c8`.
+* `max_faces` (0.12.0): a file of more triangles is simplified to at most `max_faces`, about
+  that many, before anything else is computed from it (normals, bounds, rasterizing); `None`
+  draws every triangle, and anything but a whole number ≥ 1 or `None` is an error. A surface
+  past 100 000 triangles is mostly triangles smaller than a printed pixel at a panel's size.
+  The simplification is quadric edge collapse (fast-simplification, a dependency imported only
+  then): vertices at the same position are merged first (an STL's three per facet; unmerged,
+  no edge is shared and whole triangles were removed: 31 % of a test sphere's area was left),
+  zero-area triangles are left out, and edges collapse until no more than `max_faces` remain.
+  Every triangle left is one of the file's with its corners moved, so a value or colour per
+  face follows it exactly: `scalars` per vertex are averaged per face on the file's mesh as
+  before, then each drawn face takes its file face's value; per-face `scalars` and the file's
+  own colours likewise. If which file face a drawn one came from cannot be recovered (the
+  library's replay of its collapses disagreeing with its result), the mesh is refused, never
+  drawn with colours on the wrong faces. The same file and arguments give the same triangles
+  (the algorithm has no randomness; a rebuild is byte-identical), under a given
+  fast-simplification build, as the bytes are under a given matplotlib. It needs
+  fast-simplification 0.1.11 or later: 0.1.7 and 0.1.8 simplify differently on the first call in
+  a process (a rebuild differed; `test_a_simplified_mesh_panel_rebuilds_byte_for_byte` fails
+  under 0.1.7), and 0.1.9 and 0.1.10 require numpy 2. trimesh's own
+  `simplify_quadric_decimation` calls the same library but cannot say which triangle each one
+  came from, so idofig calls it directly. A 152 096-face surface
+  built in 2.1 s whole, 1.7 s at 100 000 and 1.2 s at 50 000 (matplotlib 3.11.2, Apple M2 Max,
+  2026-10-09; the simplification itself 0.1 s). Better still, commit a small file:
+  `idofig mesh-simplify data/cortex.ply data/cortex-50k.ply --faces 50000` writes the same
+  simplification as a file (`.ply` keeps the file's colours per face; `.glb`, `.obj` and `.stl`
+  are written only for a file without colours, which they could not keep per face; writing over
+  the file being read is refused).
 * `shade=True` is a headlight: at every draw each face is `rgb × (0.35 + 0.65·|n·v|)`, n its
   normal and v the direction to the viewer under the axes' current elev, azim and roll (in
   the axes' box, where a normal is scaled by the inverse of the box's stretch), so a view set
@@ -622,7 +659,7 @@ producer's `inputs`, or editing it leaves the panel fresh.
 * The axes' limits become the bounds of every mesh drawn on it so far (a flat mesh gets a
   thousandth of its largest extent across) and its box aspect their extents, one scale for x,
   y and z, at the axes' current zoom. Axis visibility is the script's (`ax.set_axis_off()`).
-* No edges are drawn. Past `MESH_VECTOR_FACES` = 20 000 faces (`rasterized=None`) the mesh is
+* No edges are drawn. Past `MESH_VECTOR_FACES` = 20 000 drawn faces (`rasterized=None`) the mesh is
   rasterized — at `savefig.dpi`, 600 or the journal's `minDpi` if higher — with antialiasing
   off, which leaves no seams between triangles; it keeps its name in panel.svg (one `<image>` in
   `<g id="main.mesh.cortex">`). A vector mesh's triangles may show hairline seams where an SVG

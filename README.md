@@ -79,7 +79,9 @@ ax.set_axis_off()
 
 Its view is a style override on the 3D axes (`main`: `elev`, `azim`, `roll`, `zoom`, `proj`),
 so an editor turns the mesh by writing style.json, and a rebuild draws it from there.
-`idofig add-panel FIG PANEL --mesh data/head.glb` writes such a producer.
+`idofig add-panel FIG PANEL --mesh data/head.glb` writes such a producer. A mesh of more than
+100 000 triangles is drawn simplified to about that many (`max_faces=`, 0.12.0); better, commit a
+small one: `idofig mesh-simplify data/cortex.ply data/cortex-50k.ply --faces 50000`.
 
 ## figure.json (schema 2, or 3)
 

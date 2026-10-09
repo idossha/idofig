@@ -639,8 +639,9 @@ def _save_one(ctx: Context, pid: str, fig, report: SaveReport) -> tuple[str, str
 
 def _mesh_entries(table, parts: dict, root: Path) -> None:
     """A mesh part's ``mesh`` (0.11.0): its file, project-relative (absolute when outside the
-    project), and the faces, vertices and bounds drawn from it, so an editor can load the file
-    and show the box the panel draws."""
+    project), the faces, vertices and bounds drawn from it (0.12.0: fewer than the file's
+    ``file_faces``/``file_vertices`` when it was simplified), so an editor can load the file and
+    show the box the panel draws."""
     for n, part in table.parts.items():
         info = None if part.group else getattr(part.artists[0], "_idofig_mesh", None)
         if info is None:
@@ -648,6 +649,7 @@ def _mesh_entries(table, parts: dict, root: Path) -> None:
         inside = info["path"] == root.resolve() or root.resolve() in info["path"].parents
         path = rel(info["path"], root.resolve()) if inside else info["path"].as_posix()
         parts[n]["mesh"] = {"path": path, "faces": info["faces"], "vertices": info["vertices"],
+                            "file_faces": info["file_faces"], "file_vertices": info["file_vertices"],
                             "bounds": info["bounds"]}
 
 

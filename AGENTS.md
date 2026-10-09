@@ -57,7 +57,7 @@ All under `src/idofig/`.
 | file | what |
 |---|---|
 | `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
-| `meshes.py` | `idofig.mesh` (0.11.0): reads a mesh file with trimesh (imported there only), draws it on a 3D axes as a `MeshCollection`: smoothed normals, a headlight recomputed from the view at every draw, and its own vectorized projection (matplotlib's, for all triangles at once; equal-depth faces in the file's order); named `<axes>.mesh.<name>` |
+| `meshes.py` | `idofig.mesh` (0.11.0): reads a mesh file with trimesh (imported there only), simplifies one over `max_faces` with fast-simplification (0.12.0; also `idofig mesh-simplify`), draws it on a 3D axes as a `MeshCollection`: smoothed normals, a headlight recomputed from the view at every draw, and its own vectorized projection (matplotlib's, for all triangles at once; equal-depth faces in the file's order); named `<axes>.mesh.<name>` |
 | `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context`; `panels` selects the Agg backend unless it runs in a session, `save` draws on an Agg canvas of its own, lays a panel out, moves offset parts, keeps named rasterized parts' names, measures only what was drawn (with the SVG's text metrics, not Agg's), then puts back what it changed to write the panel (canvas, dpi, size, layout, placements, moves, wrapped draws); style overrides stay set on the script's figure |
 | `naming.py` | the part-naming grammar; legend entries joined to their series by artist |
 | `marks.py` | what data marks drew (`data`), axes `anchors`/`categories`, mark ids and data attributes in panel.svg, the `build` hint (0.10.0) |
@@ -85,4 +85,7 @@ producer's `inputs`, draw it on a 3D axes with `idf.mesh(ax, "data/head.glb")` (
 `main.mesh.head`; `scalars=`/`cmap=`/`color=` colour it, otherwise its own vertex colours; it is
 lit smoothly over shared vertices, `smooth=False` for flat facets), and
 never set the view in the script — `elev`, `azim`, `roll`, `zoom` and `proj` on the 3D axes in
-style.json are where an editor or an agent turns it.
+style.json are where an editor or an agent turns it. Keep meshes small: past `max_faces=100_000`
+triangles one is drawn simplified, but a huge file is still read and simplified at every build
+and weighs on the repository — commit a small surface instead
+(`idofig mesh-simplify data/head.ply data/head-50k.ply --faces 50000`).

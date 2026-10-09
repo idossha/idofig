@@ -2,6 +2,9 @@
 trimesh and draws them on a 3D axes, lit from the viewer; a 3D axes has the role ``axes3d`` and
 takes its view (``elev azim roll zoom proj``) from style.json; a mesh part's manifest says which
 file it drew; ``add-panel --mesh`` scaffolds a producer that lists the mesh in its inputs.
+Simplification (0.12.0, 2026-10-09): a mesh of more than ``max_faces`` triangles is drawn
+decimated, its values and colours following the file's faces; ``idofig mesh-simplify`` writes
+the smaller file.
 
 Where the expected numbers come from: every mesh is made in the test. The .ply and .obj are
 written here as text, so their vertices, faces and colours are the ones typed below, not
@@ -10,7 +13,12 @@ bounds are its box's corners moved by the node transforms by hand (a 90° turn a
 x and y extents). The headlight's colour is #c8c8c8 × (0.35 + 0.65 sin elev) for a triangle in
 the plane z = 0 (its normal is z, the viewer's direction makes the angle elev with the plane),
 rounded as matplotlib's to_hex rounds. The raster dpi is the PNG's own pixel width over its
-width in points, read from panel.svg.
+width in points, read from panel.svg. A simplified mesh's colours are checked against its own
+geometry: a field that is the vertex's x coordinate must give each drawn face about its drawn
+centroid's x (decimation moves corners: the bounds are what 1280 → 400 faces measured on the
+bumpy sphere, mean 0.031 and max 0.16, with room; a face given another face's value is off by
+0.75 on average), and the drawn area must stay that of the file (98.7 % measured; an STL
+decimated without merging its corners kept 31 %).
 
 Reproduce: `.venv/bin/python -m pytest tests/test_meshes.py`. Rebuild byte identity of panels
 without meshes is test_build.py's; a 3D axes' labels and ticks are test_fine_control.py's.
@@ -299,6 +307,98 @@ def test_import_idofig_imports_neither_matplotlib_nor_trimesh():
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
+# ---------------------------------------------------------------------------- simplification
+
+
+def _area(verts, faces):
+    t = np.asarray(verts)[np.asarray(faces)]
+    return np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1).sum() / 2
+
+
+def _colour_by_x(path):
+    """The bumpy sphere with each vertex's red channel its x coordinate, from -1.1 to 1.1 over 0–255."""
+    s = trimesh.load(_bumpy_sphere(path), process=False)
+    red = np.round((s.vertices[:, 0] + 1.1) / 2.2 * 255)
+    colours = np.c_[red, np.zeros((len(red), 2)), np.full(len(red), 255)].astype(np.uint8)
+    trimesh.Trimesh(s.vertices, s.faces, vertex_colors=colours, process=False).export(path)
+    return path
+
+
+@pytest.mark.parametrize("colouring", ["per vertex", "per face", "file colours"])
+def test_a_mesh_over_max_faces_is_drawn_simplified_and_its_values_follow_their_faces(tmp_path, colouring):
+    path = _bumpy_sphere(tmp_path / "s.ply") if colouring != "file colours" else _colour_by_x(tmp_path / "s.ply")
+    v, f, _ = meshes.read_mesh(path)
+    kwargs = {"per vertex": {"scalars": v[:, 0]}, "per face": {"scalars": v[f][:, :, 0].mean(axis=1)},
+              "file colours": {"shade": False}}[colouring]
+    ax = _ax3d()
+    coll = idf.mesh(ax, path, max_faces=400, **kwargs)
+    info = coll._idofig_mesh
+    drawn = coll._idofig_vec[:3].T.reshape(-1, 3, 3)  # the triangles drawn, in the order of their colours
+    assert (info["file_faces"], info["file_vertices"]) == (1280, 642)
+    assert 360 <= info["faces"] <= 400 and len(drawn) == info["faces"], "about max_faces, never more"
+    assert info["vertices"] < 642
+    if colouring == "file colours":
+        values = coll._idofig_unlit[:, 0] * 2.2 - 1.1  # face order (a draw sorts them by depth)
+    else:
+        values = coll.get_array()
+    err = np.abs(values - drawn[:, :, 0].mean(axis=1))
+    assert err.mean() < 0.06 and err.max() < 0.3, (err.mean(), err.max())
+    assert _area(drawn.reshape(-1, 3), np.arange(3 * len(drawn)).reshape(-1, 3)) == pytest.approx(_area(v, f), rel=0.03)
+
+
+def test_simplifying_is_deterministic_and_none_draws_every_face(tmp_path):
+    path = _bumpy_sphere(tmp_path / "s.ply")
+    runs = [idf.mesh(_ax3d(), path, max_faces=400, scalars=np.arange(642.0)) for _ in range(2)]
+    assert np.array_equal(runs[0]._idofig_vec, runs[1]._idofig_vec)
+    assert np.array_equal(runs[0].get_array(), runs[1].get_array())
+    whole = idf.mesh(_ax3d(), path, max_faces=None)._idofig_mesh
+    assert (whole["faces"], whole["vertices"]) == (whole["file_faces"], whole["file_vertices"]) == (1280, 642)
+    assert idf.mesh(_ax3d(), path, max_faces=1280)._idofig_mesh["faces"] == 1280, "at the limit: drawn whole"
+    for bad in (0, -5, 2.5, True, "1000"):
+        with pytest.raises(IdofigError, match="max_faces"):
+            idf.mesh(_ax3d(), path, max_faces=bad)
+
+
+def test_an_stl_is_simplified_over_merged_corners_without_holes(tmp_path):
+    """An STL stores three vertices per facet: decimated as stored, no edge is shared and whole
+    triangles go (31 % of the area was left); merged by position first, the surface stays."""
+    s = trimesh.load(_bumpy_sphere(tmp_path / "s.ply"), process=False)
+    stl = tmp_path / "s.stl"
+    s.export(stl)
+    v, f, _ = meshes.read_mesh(stl)
+    assert len(v) == 3 * 1280
+    coll = idf.mesh(_ax3d(), stl, max_faces=400)
+    drawn = coll._idofig_vec[:3].T
+    assert coll._idofig_mesh["faces"] <= 400
+    assert _area(drawn, np.arange(len(drawn)).reshape(-1, 3)) == pytest.approx(_area(v, f), rel=0.03)
+
+
+def test_mesh_simplify_writes_a_smaller_file_byte_for_byte_and_keeps_colours_where_it_can(tmp_path, capsys):
+    src = _colour_by_x(tmp_path / "s.ply")
+    a, b = tmp_path / "a.ply", tmp_path / "b.ply"
+    assert cli.main(["mesh-simplify", str(src), str(a), "--faces", "400"]) == 0
+    assert "from 1280 faces, 642 vertices" in capsys.readouterr().out
+    assert cli.main(["mesh-simplify", str(src), str(b), "--faces", "400"]) == 0
+    assert a.read_bytes() == b.read_bytes()
+    small = trimesh.load(a, process=False)  # read back by trimesh, not by idofig
+    assert 360 <= len(small.faces) <= 400 and small.visual.kind == "face"
+    red = small.visual.face_colors[:, 0] / 255 * 2.2 - 1.1
+    err = np.abs(red - small.vertices[small.faces][:, :, 0].mean(axis=1))
+    assert err.mean() < 0.06 and err.max() < 0.3
+
+    plain = _bumpy_sphere(tmp_path / "plain.ply")
+    assert cli.main(["mesh-simplify", str(plain), str(tmp_path / "small.glb"), "--faces", "400"]) == 0
+    assert len(meshes.read_mesh(tmp_path / "small.glb")[1]) <= 400
+    capsys.readouterr()
+    for args, message in (([str(src), str(src)], "is the file being simplified"),
+                          ([str(src), str(tmp_path / "s.stl")], "only .ply keeps"),
+                          ([str(src), str(tmp_path / "s.gltf")], "write .ply, .glb, .obj or .stl"),
+                          ([str(tmp_path / "none.ply"), str(a)], "does not exist")):
+        assert cli.main(["mesh-simplify", *args, "--faces", "400"]) == 2
+        assert message in capsys.readouterr().err
+    assert not (tmp_path / "s.stl").exists() and src.read_bytes() != a.read_bytes()
+
+
 # ---------------------------------------------------------------------------- panels
 
 
@@ -345,7 +445,8 @@ def test_the_manifest_names_the_mesh_its_file_and_the_3d_axes_its_view(mesh_proj
     pyramid, box, main = parts["main.mesh.pyramid"], parts["main.mesh.box-frame"], parts["main"]
     assert (pyramid["kind"], pyramid["role"], pyramid["stability"], pyramid["parent"]) == \
         ("collection", "mesh", "semantic", "main")
-    assert pyramid["mesh"] == {"path": "data/pyramid.ply", "faces": 6, "vertices": 5, "bounds": [[0, 0, 0], [2, 4, 3]]}
+    assert pyramid["mesh"] == {"path": "data/pyramid.ply", "faces": 6, "vertices": 5, "file_faces": 6,
+                               "file_vertices": 5, "bounds": [[0, 0, 0], [2, 4, 3]]}
     assert box["mesh"]["faces"] == 12 and box["mesh"]["bounds"] == [[-1, -1, -1], [1, 1, 1]]
     assert pyramid["props"]["cmap"] == "inferno" and box["props"]["alpha"] == 0.5
     assert pyramid["props"]["edgecolor"] == "none", "no stroke: the line-weight check has nothing to read"
@@ -430,6 +531,21 @@ def test_a_mesh_panel_rebuilds_byte_for_byte(mesh_project):
     d = mesh_project.figure_dir("fig-1")
     before = {p: p.read_bytes() for p in d.rglob("*") if p.is_file()}
     assert build(mesh_project, force=True).ok
+    assert {p: p.read_bytes() for p in d.rglob("*") if p.is_file()} == before
+
+
+def test_a_simplified_mesh_panel_rebuilds_byte_for_byte(project):
+    _bumpy_sphere(project.root / "data/s.ply")
+    (project.root / "figures/fig-1/make.py").write_text(
+        "import numpy as np\nimport idofig as idf\np = idf.panels('a', 'b')\nfor f in p.values():\n"
+        "    ax = f.add_subplot(projection='3d'); idf.name(ax, 'main')\n"
+        "    idf.mesh(ax, 'data/s.ply', scalars=np.arange(642.0), max_faces=400)\nidf.save(p)\n", encoding="utf-8")
+    assert build(project).ok
+    m = _manifest(project)["parts"]["main.mesh.s"]["mesh"]
+    assert (m["file_faces"], m["file_vertices"]) == (1280, 642) and m["faces"] <= 400
+    d = project.figure_dir("fig-1")
+    before = {p: p.read_bytes() for p in d.rglob("*") if p.is_file()}
+    assert build(project, force=True).ok
     assert {p: p.read_bytes() for p in d.rglob("*") if p.is_file()} == before
 
 

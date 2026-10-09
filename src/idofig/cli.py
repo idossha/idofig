@@ -185,6 +185,15 @@ def cmd_add_panel(args) -> int:
     return 0
 
 
+def cmd_mesh_simplify(args) -> int:
+    from .meshes import simplify_file  # numpy, matplotlib and trimesh: only this command needs them
+
+    n = simplify_file(Path(args.src), Path(args.out), args.faces)
+    print(f"wrote {args.out}: {n['faces']} faces, {n['vertices']} vertices "
+          f"(from {n['file_faces']} faces, {n['file_vertices']} vertices)")
+    return 0
+
+
 def cmd_style(args) -> int:
     project = find_project()
     with edit_lock(project):  # a running `serve` may be writing the same style.json
@@ -352,6 +361,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--image", help="place this project file (svg, png, jpg, gif, webp) as the panel, as it is")
     p.add_argument("--place", help="x,y,w,h in mm")
     p.set_defaults(fn=cmd_add_panel)
+
+    p = sub.add_parser("mesh-simplify", help="write a mesh file decimated to about N faces, to commit "
+                       "a small surface instead of a huge one")
+    p.add_argument("src")
+    p.add_argument("out", help=".ply (keeps the file's colours), .glb, .obj or .stl")
+    p.add_argument("--faces", type=int, required=True, help="at most about this many triangles")
+    p.set_defaults(fn=cmd_mesh_simplify)
 
     p = sub.add_parser("style", help="set style overrides on a named part (key=value …)")
     p.add_argument("figure")

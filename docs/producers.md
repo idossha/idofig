@@ -64,7 +64,13 @@ graphics, so it is what makes a figure reproducible.
    viewer whatever the view — smoothly, each face by the normals of the vertices it shares
    with its neighbours (`smooth=False` lights each facet flat; an STL, whose facets share no
    vertex, is lit flat either way) — the axes' limits and box fit it on one scale, and past 20 000
-   faces it is rasterized at the journal's dpi, keeping its name. Several meshes on one axes
+   faces it is rasterized at the journal's dpi, keeping its name. Keep meshes small: past
+   `max_faces` (100 000) triangles a mesh is simplified before it is drawn, each face keeping
+   its value or colour (`max_faces=None` draws them all), but a huge file still costs a read
+   and a simplification at every build, and its size in the repository — commit a small
+   surface instead: `idofig mesh-simplify data/cortex.ply data/cortex-50k.ply --faces 50000`
+   (a `.ply` keeps the file's colours), list that one in `inputs`, and keep the original out
+   of the project or beside it. Several meshes on one axes
    are sorted as wholes (matplotlib has no depth buffer): a mesh that passes through another
    belongs in one file. Leave the view out of the script: `elev`, `azim`, `roll`, `zoom`,
    `proj` on the 3D axes in style.json turn it (`idofig style fig-3 brain main elev=10
