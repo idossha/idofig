@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "idofig"
-version = "0.12.0"
+version = "0.13.0"
 description = "Reproducible, editable publication figures: code draws, a small spec composes, a canvas or an agent refines."
 readme = "README.md"
 license = { text = "MIT" }
@@ -18,13 +18,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "ruff>=0.4"]
+# idofig.neuro (0.13.0): topomaps need mne, surfaces and volume slices nibabel
+eeg = ["mne>=1.6"]
+mri = ["nibabel>=5"]
+neuro = ["mne>=1.6", "nibabel>=5"]
+test = ["pytest>=8", "ruff>=0.4", "mne>=1.6", "nibabel>=5"]
 
 [project.scripts]
 idofig = "idofig.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/idofig"]
+
+# The docs an agent reads ship with the code (`idofig docs`): a project's idofig and its docs agree.
+[tool.hatch.build.targets.wheel.force-include]
+"docs/agents.md" = "idofig/docs/agents.md"
+"docs/producers.md" = "idofig/docs/producers.md"
+"SPEC.md" = "idofig/docs/SPEC.md"
+"README.md" = "idofig/docs/README.md"
+"CHANGELOG.md" = "idofig/docs/CHANGELOG.md"
 
 [tool.hatch.build.targets.sdist]
 include = ["src/idofig", "tests", "docs", "README.md", "LICENSE", "SPEC.md"]

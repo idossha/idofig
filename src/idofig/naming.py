@@ -26,7 +26,9 @@ unlabelled artists                    ``main.line0``, ``main.patch3`` …       
 
 A 3D axes' z axis is named like x and y: ``main.zlabel``, ``main.zaxis``, ``main.ztick.<text>``;
 its axes have the role ``axis3d``, and the 3D axes itself the role ``axes3d`` (0.11.0). A mesh
-drawn with ``idofig.mesh`` is ``main.mesh.<name or file stem>`` (role ``mesh``, semantic).
+drawn with ``idofig.mesh`` is ``main.mesh.<name or file stem>`` (role ``mesh``, semantic). A
+part an idofig helper drew is named by the helper (:func:`mark_part`, 0.13.0): ``brain.image``
+(``idofig.image``), ``topo.field``, ``topo.head`` (``idofig.neuro.topomap``) and so on.
 Free text is named by its axes and its text (``fig.text`` by its text alone), so a script that
 draws its own tick labels with ``ax.text("5")`` more than once in one axes (or with
 ``fig.text`` on the figure) gets the same name twice; the second is ``….2`` (positional) and
@@ -60,6 +62,14 @@ from matplotlib.text import Text
 from .errors import NameCollisionError
 
 AUTO = "_idofig_auto"
+PART = "_idofig_part"
+
+
+def mark_part(artist: Artist, suffix: str, role: str | None = None) -> Artist:
+    """Name ``artist`` ``<its axes>.<suffix>`` when it is saved (semantic); ``role`` defaults to
+    its kind. For the parts an idofig helper draws, whose meaning the helper knows."""
+    setattr(artist, PART, (suffix, role or kind_of(artist)))
+    return artist
 
 
 def slug(text: Any, limit: int = 48) -> str:
@@ -301,6 +311,11 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
         mesh = getattr(coll, "_idofig_mesh", None)
         if mesh is not None:
             t.add(f"{p}.mesh.{mesh['name']}", coll, "mesh", "semantic", p)
+    # What an idofig helper drew (0.13.0: idofig.image, idofig.neuro) is named by what it is.
+    for artist in [*ax.images, *ax.collections, *ax.lines, *ax.patches, *ax.texts]:
+        part = getattr(artist, PART, None)
+        if part is not None:
+            t.add(f"{p}.{part[0]}", artist, part[1], "semantic", p)
 
     # Series: labelled containers, then labelled artists. Duplicate labels become a
     # group addressed by the label, with positional members.

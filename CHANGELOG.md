@@ -4,6 +4,71 @@ What changed for people who make figures with idofig, newest first. The format f
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow `src/idofig/_version.py`.
 Releases before 0.7.0 are described in their commit messages (`git log`) and in SPEC.md.
 
+## [0.13.0] — unreleased
+
+### Added
+
+- **A render made elsewhere is one call: `idf.image(fig, "renders/lh_lateral.png", 2, 10, 30, 24,
+  name="brain")`.** It is fitted in the box (mm) with its aspect kept, centred, and embedded with its
+  own pixels, never resampled. A render with a transparent background is cropped to what it drew
+  and loses the dark fringe Blender, PyVista or nilearn leave around it. The image is the part
+  `brain.image`. Its axes keeps the file's pixel coordinates, cropped or not, so a point measured
+  on the render is drawn where it was measured. The cropping and the fringe fix are also
+  `idofig.rasters.crop_alpha` and `idofig.rasters.bleed`, numpy only.
+- **`idofig.neuro`: topomaps, cortical surfaces and MRI slices, each part named.**
+  - `neuro.topomap(ax, values, info, mask=cluster)` draws mne's scalp map and names its parts
+    `topo.field`, `topo.head`, `topo.nose`, `topo.ear.left`, `topo.ear.right`, `topo.mask`, so a
+    style.json override recolours the significance dots or thins the outline. The map is clipped at
+    the head outline, the dots are a fixed size in mm, and the colour scale is centred on zero.
+    A `label` (a cluster's p) can sit under the head.
+  - `neuro.surface(ax, "lh.inflated", t_map, sulc="lh.sulc", threshold=2)` draws a FreeSurfer or
+    GIFTI surface as an idofig mesh, orthographic, zoomed to fill the box its axes was placed in.
+    Below the threshold it shows the sulci in two greys, or one colour such as a medial wall's;
+    `outline=` draws a region's or a cluster's border on it. Pass both hemispheres for a ventral
+    or dorsal view. It opens on a named view (`lateral`, `medial`, `ventral` …) that style.json
+    can turn.
+  - `neuro.surface_views(fig, 0, 0, 120, 30, {"left": "lh.pial", "right": "rh.pial"}, values)`
+    lays out several views in a row at one scale, each sized to the brain it shows, with
+    `L lat`-style tags if you want them. `neuro.view_size` gives a view's shape for your own
+    layouts.
+  - `neuro.volume_slice(ax, "T1.nii.gz", axis="z", at=12, overlay="tmap.nii.gz", roi="roi.nii.gz",
+    crosshair=target, orientation="all", coordinate=True)` cuts an anatomy, an overlay and an
+    ROI outline at a position in mm, with a crosshair through a point, the sides' letters and
+    `x = −25, y = −22, z = −14 mm` under it. Volumes on different grids line up without
+    resampling, a 4-D file's k-th volume is `(file, k)`, `extent=` crops in mm, and slices are
+    neurological by default.
+  - `neuro.centroid(roi, side="left")` finds where to cut, `neuro.line_profile(field, through=target,
+    axis="x")` samples a volume along the crosshair for a profile plot, and `neuro.parcel_values`
+    turns one value per FreeSurfer parcel into one per vertex. `neuro.volume_to_surface(("groupmean.nii.gz",
+    1), "lh.central.gii", cortex="lh.mask")` maps a volume onto the cortex along each vertex's
+    normal, as nilearn's `vol_to_surf` does, so a producer can go from NIfTI to surface without a
+    preprocessing step.
+  - `neuro.electrodes(ax, xy, names, colors=..., signs=[1, -1, 1, -1])` draws signed electrode
+    discs on a render or a cap map, with labels placed clear of each other and of the discs.
+  - `neuro.callouts(fig, neuro.project(ax3d, points), labels)` names points of a brain view
+    with leader lines.
+  - Install with `pip install "idofig[neuro]"` (or `[eeg]` for mne alone, `[mri]` for nibabel).
+    `import idofig` and `import idofig.neuro` import neither.
+- `idofig add-panel fig-2 eeg --template topomap` writes a producer with an example scalp map.
+- **Agents read the docs of the idofig a project runs.** `idofig docs` prints where this version's
+  `agents.md` (how to work on figures: which file holds each adjustment, the rules, the
+  neuroscience helpers), `producers.md` and `SPEC.md` are; a wheel now ships them. `idofig skill
+  install` puts a short `idofig` skill into `~/.claude/skills` (and `~/.agents/skills`, or a
+  project's `.claude/skills` with `--project`) that tells an agent to run `idofig docs`. It never
+  writes over a skill another tool or you put there unless you pass `--force`.
+- `idf.mesh(..., background=)` colours the faces whose value is NaN, which used to be transparent.
+- A producer that imports mne or nibabel records their versions in figure.lock.json beside
+  matplotlib's.
+
+### Changed
+
+- Nothing is stale after upgrading: panels that do not use the new helpers are drawn as before.
+
+### Fixed
+
+- `idf.colorbar(ScalarMappable(...), cax=cax)` no longer fails for a mappable drawn on no axes; it
+  takes the figure from `cax` as well as from `ax`.
+
 ## [0.12.0] — unreleased
 
 ### Added

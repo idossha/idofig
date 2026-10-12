@@ -11,7 +11,7 @@ from .errors import IdofigError
 from .fsutil import rel, write_atomic, write_json
 from .project import Project, check_id
 
-TEMPLATES = ("bar", "line", "scatter", "heatmap", "blank", "mesh")
+TEMPLATES = ("bar", "line", "scatter", "heatmap", "blank", "mesh", "topomap")
 MESH_SUFFIXES = (".glb", ".gltf", ".stl", ".ply", ".obj")  # what idofig.mesh reads (with trimesh)
 GAP_MM = 4.0
 

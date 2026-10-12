@@ -371,6 +371,19 @@ its axes have the role `axis3d`, and the 3D axes itself the role `axes3d` (0.11.
 `….2`, positional, and reported. A 3D axis draws its pane and grid in groups of their own,
 which carry no id, so each part's id is in the SVG once.
 
+**Helper parts (0.13.0).** What `idofig.image` and `idofig.neuro` draw is named by the helper,
+`<axes>.<what it is>`, `semantic`, whatever order it was drawn in: `<axes>.image` (role `image`);
+a topomap's `<axes>.field` (`image`), `<axes>.head`, `<axes>.nose`, `<axes>.ear.left`,
+`<axes>.ear.right` (role `outline`, revealed with the scaffold in `build`), `<axes>.mask` (`line`),
+`<axes>.sensors` and `<axes>.contours` (`collection`), `<axes>.label` (`text`); a slice's
+`<axes>.anatomy`, `<axes>.overlay` (`image`), `<axes>.roi` (`collection`), `<axes>.crosshair.h`
+and `.v` (`line`), `<axes>.mark.<letter>` and `<axes>.coordinate` (`text`); a view's
+`<axes>.tag`; an electrode's `<axes>.electrode.<name>` (`patch`) and its `.sign`, `.sign.v`,
+`.leader` (`line`) and `.label` (`text`); a callout's `<name>.<label>` and `.leader`. A surface is
+a mesh, `<axes>.mesh.<name>`. A gid on
+such a part still wins, and a second part of one name on an axes is `….2`, positional, and
+reported.
+
 A rasterized part (`rasterized=True`) with a name that is not positional — an author gid, a
 label, a colorbar's solids — keeps it in the SVG: its `<image>` is wrapped in `<g
 id="<name>">`, one image per such part. Positional rasterized parts (`main.line0` …) merge
@@ -519,7 +532,8 @@ builder_render, idofig}}, figure_svg}`.
 A panel is **stale** when its producer's command, files or journal preset changed, its size
 or style changed, its `panel.svg` differs from what the build wrote, or it was drawn under
 another `render` number by a build this idofig would draw differently. `built_with` (the
-Python, idofig, matplotlib and numpy versions of the process that drew the panels) is
+Python, idofig, matplotlib and numpy versions of the process that drew the panels, and mne's
+and nibabel's when the producer imported them, 0.13.0) is
 recorded, never compared: a new version alone makes nothing stale. `render`
 (`build.RENDER`) changes only in a release that draws an unchanged panel differently. The
 lock records two: `render` is copied from the panel's manifest, so it is the render of the
@@ -540,6 +554,10 @@ build fails`, and gives the same step. The lock does not see that upgrade, so th
 reads fresh; `check`, which runs the producer, then reports ``drawn by idofig 0.2.2 (render
 1); its producer now draws with render 2 — `idofig build --force <fig>` redraws it`` rather
 than "not reproducible".
+
+**Upgrading to 0.13.0.** Render 6 still: nothing is stale and no panel is drawn differently.
+`idofig.image` and `idofig.neuro` are new; a producer that imports mne or nibabel records their
+versions in the lock's `built_with`, which is never compared.
 
 **Upgrading to 0.12.0.** Render 6: every panel is stale once. A mesh of more than 100 000
 triangles is drawn simplified (`max_faces`; pass `max_faces=None` to draw it whole, as 0.11.0
@@ -591,7 +609,8 @@ moved to `<gid>.<entry>`; an axes legend's had none. Its manifest:
 ## Meshes (0.11.0)
 
 `idofig.mesh(ax, path, *, name=None, color=None, scalars=None, cmap="viridis", vmin=None,
-vmax=None, shade=True, smooth=True, alpha=None, rasterized=None, max_faces=100_000)` draws a
+vmax=None, shade=True, smooth=True, alpha=None, rasterized=None, max_faces=100_000,
+background=None)` draws a
 triangle mesh file on a 3D axes
 (`add_subplot(projection="3d")`; any other axes is an error) and returns its collection. The
 file is input data the producer reads, like a `.npy` — never a figure format: list it in the
@@ -608,6 +627,9 @@ producer's `inputs`, or editing it leaves the panel fresh.
   three) or one per face (per vertex when the counts are equal), through `cmap`, `vmin`,
   `vmax` (style.json's collection `cmap`/`vmin`/`vmax` override them) — then `color`, then the
   file's own vertex or face colours (a glTF material sampled to colours), then `#c8c8c8`.
+  `background` (0.13.0; one colour, or one per face; it needs `scalars`) colours the faces whose
+  scalar is NaN — among per-vertex scalars, a face with a NaN corner — which otherwise take the
+  colormap's "bad" colour (transparent); it follows a simplified face as its value does.
 * `max_faces` (0.12.0): a file of more triangles is simplified to at most `max_faces`, about
   that many, before anything else is computed from it (normals, bounds, rasterizing); `None`
   draws every triangle, and anything but a whole number ≥ 1 or `None` is an error. A surface
@@ -670,6 +692,199 @@ producer's `inputs`, or editing it leaves the panel fresh.
 `idofig add-panel FIG PANEL --mesh <project file>` (the RPC's `add_panel` with `mesh`; the
 `mesh` template, implied) writes a producer that draws the file on a 3D axes named `main`,
 axis off, with the file in its `inputs`. The file must be inside the project.
+
+## Images and neuroscience panels (0.13.0)
+
+Helpers that draw on an axes the producer made and name what they drew (Part names, *Helper
+parts*). Every file they read is input data: list it in the producer's `inputs`, or editing it
+leaves the panel fresh. Every size they take is in mm on the page.
+
+**`idofig.image(fig, src, left, bottom, width, height, *, name, trim=True, **imshow)`** shows a
+raster render — a file matplotlib reads (PNG; JPEG or TIFF through Pillow) or an (H, W), (H, W,
+3) or (H, W, 4) array — as large as fits in the box (mm from the panel's bottom-left, as
+`axes_mm`), its aspect kept, centred, on a new axes named `name`, axis off; the image is
+`<name>.image`. It is embedded with `interpolation="none"` unless the call says otherwise: the
+SVG carries the image's own pixels, never ones resampled to a dpi. With `trim`, an image with an
+alpha channel is first cropped to its pixels with any alpha and bled (`rasters.bleed`): each
+fully transparent pixel takes the colour of the nearest pixel with alpha along its row or column
+(the row on a tie; repeated until every pixel has one), its alpha unchanged. A renderer leaves
+black under alpha 0, and a filter or viewer that blends colour and alpha separately draws it as a
+dark fringe. The axes' data coordinates are the file's pixels — x right, y down, a pixel's centre
+on whole numbers — cropped or not, so a point measured on the render (an electrode, an anchor) is
+drawn on it where it was measured. `rasters.crop_alpha` crops without bleeding. numpy only.
+
+**`idofig.neuro`** (`pip install "idofig[eeg]"` for topomaps, `"idofig[mri]"` for surfaces,
+slices and what is read from volumes, `"idofig[neuro]"` for both; the marks need neither;
+importing `idofig.neuro` imports neither mne nor nibabel, and calling a helper without its extra
+is an error that names it).
+
+*Topomaps* (`eeg`):
+
+* `topomap(ax, values, pos, *, mask=None, sensors=False, contours=0, cmap="RdBu_r", vlim=None,
+  clip=True, marker_mm=0.8, mask_color="black", label=None, label_props=None, **mne_kwargs)`
+  draws `mne.viz.plot_topomap` of one value per channel at `pos` (an mne `Info` or an (n, 2)
+  array) and returns the map's image. `vlim` defaults to ± the largest finite |value|. `mask` (n
+  booleans or channel indices) marks channels with filled dots `marker_mm` across (`mask_params`
+  merges over them). The outlines take the rc's `axes.linewidth`; with `clip` the map is clipped
+  at the head outline (the circle through its extremes), where mne clips about 1 % outside it.
+  The outlines are named by shape, not order: the head is the outline with the most points, the
+  nose the one with three, the ears left and right of the head's centre. `label` (a cluster's
+  p, say) is written under the head, `<axes>.label`, with `label_props`.
+
+*Surfaces* (`mri`):
+
+* `surface(ax, surf, values=None, *, sulc=None, hemi=None, view="lateral", threshold=None,
+  cmap="RdBu_r", vmin=None, vmax=None, name=None, background=None, outline=None,
+  outline_color=None, proj="ortho", zoom_to_fit=True, **mesh_kwargs)` draws a cortical surface — a
+  FreeSurfer surface (`lh.inflated`), a GIFTI `.surf.gii`, or any file `idofig.mesh` reads; or a
+  list of them (both hemispheres on one axes, `values`, `sulc` and `outline` lists to match) — on
+  a 3D axes as idofig meshes (Meshes: lit from the viewer, simplified past `max_faces`, the
+  manifest's `mesh.path` the surface file), axis and background off, each named
+  `<axes>.mesh.<name (one surface only), else its hemisphere, else its file's stem>`; returns the
+  collection, or the list. `values` (per vertex: an array, a FreeSurfer morph file,
+  `.mgh`/`.mgz`, or GIFTI data) colour it through `cmap`; a face with a vertex that is NaN or
+  under `|threshold|` shows the anatomy instead: two greys from `sulc` (per vertex, FreeSurfer's
+  sign: `#8c8c8c` where a face's mean is positive, a sulcus; `#c8c8c8` otherwise), else
+  `background` (default `#c8c8c8`; a medial wall left NaN takes it). Without `values` the whole
+  surface is its anatomy. The mesh's `background` is how: `idofig.mesh(..., background=)` (one
+  colour, or one per face) colours the faces whose scalar is NaN, and style.json's
+  `cmap`/`vmin`/`vmax` still restyle the rest. `outline` (a boolean per vertex: a region, a
+  cluster) draws the faces with vertices both in and out of it — its border, one face wide — in
+  `outline_color` (the rc's `axes.edgecolor`), over any value and hidden wherever the surface
+  hides it. `view` starts the camera, in RAS (`VIEWS`): left `lateral` (elev 0, azim 180) and
+  `medial` (0, 0), right `lateral` (0, 0) and `medial` (0, 180), `dorsal` (90, −90: anterior up,
+  left on the left), `ventral` (−90, 90: anterior up, left on the right), `anterior` (0, 90),
+  `posterior` (0, −90), or `(elev, azim)`; lateral and medial need one hemisphere (`hemi`, or a
+  file named `lh.*`, `rh.*`, `*hemi-L*`, `*.L.*`, …). style.json's `elev`/`azim`/`roll`/`zoom`/
+  `proj` on the axes turn it from there, as for any mesh.
+* `fit(ax, margin=0.98)` (what `zoom_to_fit` does) zooms the meshes on a 3D axes to fill `margin`
+  of the box the axes was placed in, under its view and projection, and returns the zoom (rounded
+  to 4 decimals; style.json's `zoom` overrides it). A 3D axes draws in the square of its shorter
+  side, so a box that is not square could not be filled: the axes is made the square of the box's
+  longer side, centred on it (moved by the small offset matplotlib draws its box at, so the
+  meshes are centred), and may overlap its neighbours, its background off. The fill is measured
+  where matplotlib projects every vertex, and is exact in an orthographic view. The box is the
+  axes' place when `fit` is first called on it; a later call fills the same box.
+* `view_size(surf, view="lateral", hemi=None)` is the width and height, in the surface's mm, of
+  one surface or several seen from `view` orthographically: the shape of the box a fitted surface
+  fills, so a layout can size its axes and give several views one scale. Up on the screen is z
+  turned toward the viewer, and right is up × the direction to the viewer.
+* `surface_views(fig, left, bottom, width, height, surfaces, values=None, *, views=((left,
+  lateral), (left, medial), (right, medial), (right, lateral)), sulc=None, outline=None, gap=1.5,
+  tags=None, name="brain", **surface_kwargs)` lays out views in a row (each a hemisphere —
+  `left`, `right` or `both` — and a view; `surfaces`, `values`, `sulc`, `outline` dicts by
+  hemisphere) at one scale, as large as fits in the box, centred, `gap` mm apart: each view's box
+  is its `view_size` times the scale, and its 3D axes, `<name>.<hemisphere>.<view>`, is fitted to
+  it. `tags` (True: `L lat`, `R med`, `ven` …; or one text per view) are written under the views
+  as `….tag`. Returns the axes and the scale (mm on the page per mm of brain).
+* `parcel_values(annot, values, default=nan)` spreads {parcel name: value} over the vertices of a
+  FreeSurfer `.annot` (or a GIFTI label file); a parcel not given, or no parcel, gets `default`;
+  a name the file does not have is an error.
+
+*Volumes* (`mri`). A volume is a path nibabel reads, a nibabel image, or `(either, k)`: the k-th
+volume of a 4-D file. It is turned to RAS (`as_closest_canonical`: no resampling); an oblique
+volume is an error.
+
+* `volume_slice(ax, anatomy=None, *, axis="z", at=0.0, overlay=None, cmap="RdBu_r", vmin=None,
+  vmax=None, norm=None, threshold=None, mask=None, roi=None, roi_color=None, roi_width=None,
+  crosshair=None, crosshair_color="white", crosshair_width=None, halo=None, halo_pt=0.8,
+  orientation=False, coordinate=False, extent=None, anatomy_limits=None, radiological=False,
+  interpolation="nearest", anatomy_interpolation="bilinear")` cuts each volume at its voxel
+  nearest `at` mm along `axis` (`x` sagittal, `y` coronal, `z` axial); `at` outside one is an
+  error. The axes' units are mm (`imshow` extents at the voxel edges), so volumes on different
+  grids line up as they are; `extent=(left, right, bottom, top)` crops the slice, else the anatomy
+  (else the overlay) frames it. Axial and coronal slices are neurological (the subject's left on
+  the left) unless `radiological`; sagittal has anterior on the right. The anatomy is grey from
+  its 1st to 99.5th percentile of finite non-zero voxels unless `anatomy_limits`; the overlay is
+  hidden where it is NaN, under `|threshold|`, or where `mask` (on the overlay's grid) is 0;
+  `norm` and `vmin`/`vmax` exclude each other. The roi is its 0.5 contour in `roi_color`/
+  `roi_width`, else the rc's `axes.edgecolor` and `axes.linewidth`. `crosshair` (x, y, z mm)
+  draws its two in-plane coordinates as lines across the slice in `crosshair_color`
+  (`crosshair_width`, else the rc's `axes.linewidth`). `halo` (a colour) draws the roi and the
+  crosshair over a line `halo_pt` wider in it. `orientation` writes the sides' letters inside the
+  slice, white over a dark halo: True the horizontal pair in the top corners (L and R, or P and A
+  on a sagittal slice; swapped when radiological), `"all"` all four at the edges' middles (with
+  P/A, I/S). `coordinate` writes under the slice where it is cut — `z = 12 mm`, or with a
+  crosshair `x = −25, y = −22, z = −14 mm` (typographic minus, whole mm). Parts:
+  `<axes>.anatomy`, `<axes>.overlay`, `<axes>.roi`, `<axes>.crosshair.h`, `<axes>.crosshair.v`,
+  `<axes>.mark.<letter>`, `<axes>.coordinate`. Equal aspect, axis off. Returns the overlay's
+  image, else the anatomy's.
+* `centroid(volume, threshold=0.5, side=None)` is the mean position (x, y, z mm) of the voxels
+  above `threshold`, on the subject's `left` (x < 0) or `right` (x > 0) only when `side` says;
+  none is an error. Where to cut through a target, or aim a crosshair.
+* `line_profile(volume, through, axis="x", *, start=None, stop=None, step=1.0, mask=None,
+  average_mm=0.0)` samples the volume along the line through `through` parallel to `axis`, from
+  `start` to `stop` mm along it (default: the volume's span) every `step` mm, and returns the
+  positions and the values. Trilinear over the voxels that are finite and inside `mask` (on the
+  volume's grid), weighed by it: NaN where less than half the weight is there, so an edge is not
+  eroded toward zero. With `average_mm` each sample is the mean (NaN ignored) over points every
+  1 mm out to that distance across the line in both other axes. numpy only. Exact on a field
+  linear in x, y and z.
+
+* `volume_to_surface(volume, surf, *, radius=1.0, samples=5, wider=3.0, wider_samples=7,
+  mask=None, cortex=None, fill=True)` gives one value per vertex of a surface file: the mean (NaN
+  ignored) of `samples` points along the vertex's normal (its faces' unnormalized normals summed,
+  normalized) from −`radius` to +`radius` mm, each read as `line_profile` reads (trilinear over
+  finite voxels inside `mask`, NaN under half the weight). A vertex none reached is read again to
+  `wider` mm with `wider_samples` points (None: not). `cortex` (a boolean per vertex, or a
+  per-vertex file, > 0 inside) makes every other vertex NaN (the medial wall); with `fill` a cortex
+  vertex still unread takes the mean of its read neighbours, repeated inward, and an island with
+  none stays NaN. nilearn's `vol_to_surf(kind="line")` samples the same lines but lets a NaN voxel
+  make its point NaN: on the carrier-only letter's group means over fsaverage40k (2026-10-11) the
+  two agreed on every NaN, at r ≥ 0.9986 with a median difference of 6·10⁻⁶ V/m, differing only at
+  the brain mask's edge. numpy only.
+
+*Marks* (no extra):
+
+* `electrodes(ax, xy, names, *, colors="black", signs=None, radius_mm=1.15, labels=True,
+  box=None, obstacles=None, label_color=None, fontsize=None, weight="bold", halo="white")` draws
+  at each point (the axes' data units: a render's pixels, a cap map's coordinates) a disc
+  `radius_mm` across in its colour with a white edge (0.6 pt), a white + or − (0.9 pt, 0.55 of the
+  radius each way) from `signs` (1, −1; 0 or None: none), and with `labels` its name. Discs,
+  signs and labels are drawn in mm from the axes' corner (they follow the axes wherever it is
+  moved). The labels are placed by `place_labels(xy, sizes, radius, box, obstacles)`: each in one
+  of 12 directions at 0.45, 1.9 or 3.4 mm beyond its disc, scored by 60 per mm² outside `box`
+  (default the axes, less 0.3 mm), over a disc (the electrodes' and `obstacles`', x, y in data
+  units and a radius in mm, each 0.25 mm wider) or over another label (each 0.35 mm wider), plus
+  the step and 0.35·|sin| of the direction (beside before above or below); four labels or fewer
+  by trying every combination, more by moving one at a time to its best place until none moves.
+  A placement with labels overlapping each other or outside the box is an error, never drawn. A
+  label set off from its disc gets a leader in its colour. Parts: `<axes>.electrode.<name>` (the
+  disc), `….sign`, `….sign.v`, `….label`, `….leader`. Returns the labels' centres.
+* `project(ax, points)` is where `points` (n × 3 on a 3D axes, n × 2 on a 2D one) are drawn, in mm
+  from the panel's bottom-left, as the axes is placed and turned when it is called (place it with
+  `axes_mm` on a `layout=None` panel so that is where it prints); a view turned later in
+  style.json moves the drawing, not anchors computed before.
+* `callouts(fig, anchors, labels, *, centre=None, reach=4.0, spacing=None, name="callouts",
+  color=None, fontsize=None, gap=0.4)` draws, on a transparent axes over the whole panel named
+  `name`, a leader from each anchor (panel mm) `reach` mm away from `centre` (default the anchors'
+  mean) and its label `gap` mm beyond it — left of an anchor left of the centre, right of the
+  others. The labels on each side are at least `spacing` mm apart (default 1.2 lines): sorted by
+  height, pushed up until each clears the one below, then centred where they wanted to be. Parts
+  `<name>.<label>`, `<name>.<label>.leader`.
+
+`idofig add-panel FIG PANEL --template topomap` writes a producer that draws an example scalp
+map with an mne montage, its dots and a colorbar.
+
+## Docs for agents and the skill (0.13.0)
+
+What an agent needs to work on figures ships with idofig, so it matches the version a project
+runs: `docs/agents.md` (which file holds each adjustment, the rules, the neuroscience helpers, the
+loop), `docs/producers.md`, this file, `README.md` and `CHANGELOG.md`. A wheel carries them as
+`idofig/docs/<file>`; a checkout or an editable install reads them from the repository.
+`idofig docs` prints the version and each one's path (`idofig docs spec` one path, `--json`
+both); it imports only the standard library.
+
+`idofig skill install` writes the pointer skill (`src/idofig/skill/SKILL.md`: when to use idofig,
+and "run `idofig docs`, read `agents.md` first" — no API) as `idofig/SKILL.md` into each skill
+directory: `--dir DIR` (repeatable), else the project's `.claude/skills` with `--project`, else
+`~/.claude/skills` and, when it exists, `~/.agents/skills`. The file carries the marker
+`<!-- idofig:managed-skill`; idofig rewrites only a file with it (`updated`; the same text is left
+`current`). A target that is a link, or whose directory is (a copy another tool owns, which a
+write would change through the link), or a file without the marker (one a user wrote) is
+refused, every target checked before any is written; `--force` replaces it, a link by unlinking
+the link itself, never writing to what it points to. Remove the marker to keep a file of your own.
+`idofig skill show` prints the skill.
 
 ## Determinism
 

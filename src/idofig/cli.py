@@ -194,6 +194,34 @@ def cmd_mesh_simplify(args) -> int:
     return 0
 
 
+def cmd_docs(args) -> int:
+    from .guide import doc_paths
+
+    paths = doc_paths()
+    if args.name:
+        print(paths[args.name])
+        return 0
+    if args.json:
+        _print_json({"version": __version__, "docs": {k: str(v) for k, v in paths.items()}})
+        return 0
+    print(f"idofig {__version__} — read agents.md first")
+    for name, path in paths.items():
+        print(f"  {name:<10} {path}")
+    return 0
+
+
+def cmd_skill(args) -> int:
+    from .guide import install_skill, skill_targets, skill_text
+
+    if args.action == "show":
+        print(skill_text(), end="")
+        return 0
+    root = find_project().root if args.project else None
+    for row in install_skill(skill_targets(project_root=root, dirs=args.dir), force=args.force):
+        print(f"{row['action']:<8} {row['path']}")
+    return 0
+
+
 def cmd_style(args) -> int:
     project = find_project()
     with edit_lock(project):  # a running `serve` may be writing the same style.json
@@ -395,6 +423,21 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("journals", help="list the bundled journal presets")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_journals)
+
+    p = sub.add_parser("docs", help="where this idofig's docs for agents are (agents.md, producers.md, SPEC.md …)")
+    p.add_argument("name", nargs="?", choices=["agents", "producers", "spec", "readme", "changelog"],
+                   help="print only this one's path")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_docs)
+
+    p = sub.add_parser("skill", help="install the idofig skill that points agents to `idofig docs`")
+    p.add_argument("action", choices=["install", "show"])
+    p.add_argument("--project", action="store_true", help="into this project's .claude/skills")
+    p.add_argument("--dir", action="append", metavar="DIR",
+                   help="into this skill directory (repeatable); default ~/.claude/skills and ~/.agents/skills")
+    p.add_argument("--force", action="store_true", help="replace a skill another owner put there (a link "
+                   "is replaced itself, never what it points to)")
+    p.set_defaults(fn=cmd_skill)
 
     p = sub.add_parser("serve", help="JSON-RPC over stdio for applications")
     p.set_defaults(fn=cmd_serve)

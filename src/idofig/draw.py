@@ -209,7 +209,10 @@ def name(ax, value: str):
 
 def colorbar(mappable, *, name: str | None = None, **kwargs):
     """``Figure.colorbar`` with a stable name: its axes becomes ``cbar.<name>``."""
-    fig = mappable.axes.figure if getattr(mappable, "axes", None) is not None else kwargs.get("ax").figure
+    host = mappable.axes if getattr(mappable, "axes", None) is not None else kwargs.get("ax") or kwargs.get("cax")
+    if host is None:
+        raise IdofigError("a colorbar of a mappable on no axes needs ax= or cax=")
+    fig = host.figure
     cbar = fig.colorbar(mappable, **kwargs)
     if name:
         from .project import check_id

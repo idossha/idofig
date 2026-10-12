@@ -36,7 +36,7 @@ ENTRANCES = ("fade", "draw-on", "grow", "stagger")
 
 _NONE = {"None", "none", "", " ", None}
 _SCAFFOLD = {"background", "spine", "axis", "axis3d", "xlabel", "ylabel", "zlabel", "title",
-             "suptitle", "supxlabel", "supylabel"}
+             "suptitle", "supxlabel", "supylabel", "outline"}
 _MARKS = {"line", "collection", "patch", "image"}
 
 

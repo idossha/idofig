@@ -50,9 +50,12 @@ class MeshCollection(Poly3DCollection):
     as matplotlib before 3.11 draws them; 3.11's ``argsort`` is not stable, and which of two
     coplanar triangles came last could differ by CPU."""
 
-    def __init__(self, verts: np.ndarray, faces: np.ndarray, *, shade: bool, smooth: bool, **kwargs) -> None:
+    def __init__(self, verts: np.ndarray, faces: np.ndarray, *, shade: bool, smooth: bool,
+                 background: np.ndarray | None = None, outline: tuple | None = None, **kwargs) -> None:
         triangles = verts[faces]
         self._idofig_shade = shade
+        self._idofig_background = background  # (F, 4): a face whose value is NaN shows this
+        self._idofig_outline = outline  # (faces (F,) bool, rgba): drawn in that colour over any other
         self._idofig_normals = _normals(verts, faces, triangles, smooth)
         # x, y, z, 1 of every corner, face by face: the array matplotlib projects with np.dot(M, …)
         self._idofig_vec = np.vstack([triangles.reshape(-1, 3).T, np.ones(3 * len(faces))])
@@ -66,6 +69,12 @@ class MeshCollection(Poly3DCollection):
         mapped = self._A
         base = self.to_rgba(mapped) if mapped is not None else self._idofig_unlit
         rgba = np.array(np.broadcast_to(to_rgba_array(base, self._alpha), (len(self._idofig_normals), 4)))
+        if mapped is not None and self._idofig_background is not None:
+            bad = np.ma.getmaskarray(mapped) | ~np.isfinite(np.ma.getdata(mapped))
+            rgba[bad] = to_rgba_array(self._idofig_background, self._alpha)[bad]
+        if self._idofig_outline is not None:
+            ring, colour = self._idofig_outline
+            rgba[ring] = to_rgba(colour, self._alpha)
         if self._idofig_shade:
             rgba[:, :3] *= self._light()[:, None]
         self._facecolor3d = rgba
@@ -256,7 +265,7 @@ def simplify_file(src: Path, out: Path, faces: int) -> dict:
 
 def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="viridis", vmin=None,
          vmax=None, shade: bool = True, smooth: bool = True, alpha: float | None = None,
-         rasterized: bool | None = None, max_faces: int | None = MAX_FACES):
+         rasterized: bool | None = None, max_faces: int | None = MAX_FACES, background=None):
     """Draw the triangle mesh in ``path`` (.glb .gltf .stl .ply .obj; relative to the producer's
     working directory, the project root) on the 3D axes ``ax``; returns the collection, named
     ``<axes>.mesh.<name or file stem>``.
@@ -268,9 +277,10 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
     The axes' limits become the bounds of its meshes and its box their extents (one scale for
     x, y and z). More than ``max_faces`` faces are simplified to about that many first (:func:`simplify`;
     ``None`` draws every one), each drawn face coloured as the file's face it was. More than
-    ``MESH_VECTOR_FACES`` drawn faces are rasterized unless ``rasterized`` says."""
-    if getattr(ax, "name", None) != "3d":
-        raise IdofigError("idofig.mesh draws on a 3D axes: make it with add_subplot(projection='3d')")
+    ``MESH_VECTOR_FACES`` drawn faces are rasterized unless ``rasterized`` says. ``background``
+    (0.13.0; one colour, or one per face) colours the faces whose scalar is NaN — a face with a
+    NaN corner among per-vertex scalars — which otherwise take the colormap's "bad" colour."""
+    _check_axes(ax, "idofig.mesh")
     path = Path(path)
     if path.suffix.lower() not in MESH_SUFFIXES:
         raise IdofigError(f"{path}: a mesh is one of {', '.join(MESH_SUFFIXES)}")
@@ -279,28 +289,73 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
     if max_faces is not None:
         _check_faces(max_faces, "max_faces (None draws every face)")
     verts, faces, own = read_mesh(path)
+    return draw_triangles(ax, verts, faces, own=own, path=path, name=name if name is not None else path.stem,
+                          color=color, scalars=scalars, cmap=cmap, vmin=vmin, vmax=vmax, shade=shade, smooth=smooth,
+                          alpha=alpha, rasterized=rasterized, max_faces=max_faces, background=background)
+
+
+def _check_axes(ax, who: str) -> None:
+    if getattr(ax, "name", None) != "3d":
+        raise IdofigError(f"{who} draws on a 3D axes: make it with add_subplot(projection='3d')")
+
+
+def _per_face(value, verts: np.ndarray, faces: np.ndarray, what: str, path: Path) -> np.ndarray:
+    """``value`` per vertex (averaged over each face's three) or per face, as one value per face."""
+    values = np.asarray(value, dtype=float)
+    if values.ndim != 1 or len(values) not in (len(verts), len(faces)):
+        raise IdofigError(f"{what} has shape {values.shape}; {path.name} has {len(verts)} vertices and "
+                          f"{len(faces)} faces: give one value per vertex or per face")
+    return values[faces].mean(axis=1) if len(values) == len(verts) else values
+
+
+def draw_triangles(ax, verts: np.ndarray, faces: np.ndarray, *, own: np.ndarray | None, path: Path, name: str,
+                   color=None, scalars=None, cmap="viridis", vmin=None, vmax=None, shade: bool = True,
+                   smooth: bool = True, alpha: float | None = None, rasterized: bool | None = None,
+                   max_faces: int | None = MAX_FACES, background=None, outline=None, outline_color=None):
+    """What :func:`mesh` does once the file is read: ``verts``/``faces`` (and the file's own
+    colours per face, ``own``) read from ``path``, drawn on ``ax`` as ``<axes>.mesh.<name>``.
+    ``idofig.neuro.surface`` draws a cortical surface through it. ``outline`` (one boolean per
+    vertex) draws the faces that have vertices both in and out of it in ``outline_color``: the
+    region's border, one face wide, hidden wherever the surface hides it."""
+    _check_axes(ax, "idofig.mesh")
+    if max_faces is not None:
+        _check_faces(max_faces, "max_faces (None draws every face)")
     file_counts = {"file_faces": int(len(faces)), "file_vertices": int(len(verts))}
     kwargs: dict = {"edgecolors": "none", "linewidths": 0}
-    if scalars is not None:
-        values = np.asarray(scalars, dtype=float)
-        if values.ndim != 1 or len(values) not in (len(verts), len(faces)):
-            raise IdofigError(f"scalars has shape {values.shape}; {path.name} has {len(verts)} vertices and "
-                              f"{len(faces)} faces: give one value per vertex or per face")
-        face_values = values[faces].mean(axis=1) if len(values) == len(verts) else values
-    else:
-        face_values = None
+    face_values = None if scalars is None else _per_face(scalars, verts, faces, "scalars", path)
+    if background is not None:
+        if face_values is None:
+            raise IdofigError("background colours the faces whose scalar is NaN: it needs scalars")
+        try:
+            background = np.tile(to_rgba(background), (len(faces), 1))
+        except ValueError:  # not one colour: one per face
+            background = to_rgba_array(background)
+        if len(background) != len(faces):
+            raise IdofigError(f"background has {len(background)} colours; {path.name} has {len(faces)} faces: "
+                              "give one colour, or one per face")
+    ring = None
+    if outline is not None:
+        inside = np.asarray(outline, dtype=bool).ravel()
+        if len(inside) != len(verts):
+            raise IdofigError(f"outline has {len(inside)} entries; {path.name} has {len(verts)} vertices")
+        count = inside[faces].sum(axis=1)
+        ring = (count > 0) & (count < 3)
     if max_faces is not None and len(faces) > max_faces:
         verts, faces, source = simplify(verts, faces, max_faces)
+        ring = None if ring is None else ring[source]
         face_values = None if face_values is None else face_values[source]
         own = None if own is None else own[source]
+        background = None if background is None else background[source]
     triangles = verts[faces]
     if face_values is None:
         kwargs["facecolors"] = color if color is not None else (own if own is not None else DEFAULT_COLOR)
     rasterized = len(faces) > MESH_VECTOR_FACES if rasterized is None else rasterized
     # Rasterized, antialiased triangles leave hairline seams between them in the image.
-    coll = MeshCollection(verts, faces, shade=shade, smooth=smooth, antialiased=not rasterized, **kwargs)
+    coll = MeshCollection(verts, faces, shade=shade, smooth=smooth, background=background,
+                          outline=None if ring is None else (ring, outline_color or "black"),
+                          antialiased=not rasterized, **kwargs)
     if face_values is not None:
-        coll.set_array(face_values)
+        coll.set_array(np.ma.masked_invalid(face_values) if background is not None else face_values)
         coll.set_cmap(cmap)
         coll.set_clim(vmin, vmax)
     if alpha is not None:
@@ -308,7 +363,7 @@ def mesh(ax, path, *, name: str | None = None, color=None, scalars=None, cmap="v
     coll.set_rasterized(rasterized)
     lo, hi = triangles.reshape(-1, 3).min(axis=0), triangles.reshape(-1, 3).max(axis=0)
     coll._idofig_mesh = {
-        "name": slug(name if name is not None else path.stem),
+        "name": slug(name),
         "path": path.resolve(),
         "faces": int(len(faces)),
         "vertices": int(len(verts)),

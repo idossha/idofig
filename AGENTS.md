@@ -58,6 +58,8 @@ All under `src/idofig/`.
 |---|---|
 | `__init__.py` | the package; the producer API is imported lazily from `draw.py`, so `import idofig` is cheap |
 | `meshes.py` | `idofig.mesh` (0.11.0): reads a mesh file with trimesh (imported there only), simplifies one over `max_faces` with fast-simplification (0.12.0; also `idofig mesh-simplify`), draws it on a 3D axes as a `MeshCollection`: smoothed normals, a headlight recomputed from the view at every draw, and its own vectorized projection (matplotlib's, for all triangles at once; equal-depth faces in the file's order); named `<axes>.mesh.<name>` |
+| `rasters.py` | `idofig.image` (0.13.0): places a render at its own resolution in a mm box, aspect kept; `crop_alpha` and `bleed` (numpy only) remove a transparent background's margin and dark fringe |
+| `neuro/` | `idofig.neuro` (0.13.0), behind extras: `eeg.py` `topomap` (mne, `[eeg]`), `mri.py` surfaces (`surface`, `surface_views`, `view_size`, `fit`: a 3D axes made the square around its box, zoomed to fill it; sulcal background, outlines), volumes (`volume_slice` with crosshair/letters/coordinate, `centroid`, `line_profile`, `volume_to_surface`) and `parcel_values` (nibabel, `[mri]`); `annotate.py` `electrodes` (`place_labels`), `project`, `callouts` (no extra); module names differ from function names so an import never shadows a function. Each names what it draws through `naming.mark_part` |
 | `draw.py` | the producer API: `panels`, `panel`, `name`, `colorbar`, `save`, `mm`, `pt`, `axes_mm`, `resolve_context`; `panels` selects the Agg backend unless it runs in a session, `save` draws on an Agg canvas of its own, lays a panel out, moves offset parts, keeps named rasterized parts' names, measures only what was drawn (with the SVG's text metrics, not Agg's), then puts back what it changed to write the panel (canvas, dpi, size, layout, placements, moves, wrapped draws); style overrides stay set on the script's figure |
 | `naming.py` | the part-naming grammar; legend entries joined to their series by artist |
 | `marks.py` | what data marks drew (`data`), axes `anchors`/`categories`, mark ids and data attributes in panel.svg, the `build` hint (0.10.0) |
@@ -71,12 +73,19 @@ All under `src/idofig/`.
 | `journals.py`, `journals/` | journal figure presets (column widths, font floors, line weights, panel-label style); one JSON per bundled journal, copied from SUNA's sourced profiles |
 | `serve.py`, `cli.py` | JSON-RPC server for apps; the command line |
 | `locate.py`, `scaffold.py` | "where is this part made"; `init`, `new` and `add-panel` |
-| `templates/` | the producer scripts `add-panel --template` copies: bar, line, scatter, heatmap, blank, mesh (`--mesh`) |
+| `templates/` | the producer scripts `add-panel --template` copies: bar, line, scatter, heatmap, blank, mesh (`--mesh`), topomap |
 | `fonts/` | the bundled Liberation Sans faces and their licence (`OFL.txt`) |
+| `guide.py`, `skill/SKILL.md` | `idofig docs` (where this version's agent docs are: shipped in the wheel by pyproject's `force-include`, else the checkout) and `idofig skill install` (the pointer skill; refuses links and unmarked files) |
 | `units.py` | physical units: one SVG user unit is one typographic point |
 | `fsutil.py` | small file helpers: atomic writes, canonical JSON (strict: no NaN or Infinity either way; a file that is not JSON is an error naming it), hashing |
 | `errors.py` | every error idofig raises on purpose is an `IdofigError` |
 | `_colornames.py` | the colour names matplotlib accepts, for validating without importing it (generated; do not edit) |
+
+## Docs for agents
+
+`docs/agents.md` is what the `idofig` skill sends an agent to (through `idofig docs`): keep it
+in step with the code in the same commit, as SPEC is. A new capability an agent should reach for
+gets a row there; the skill (`src/idofig/skill/SKILL.md`) stays a pointer with no API in it.
 
 ## Writing producers (for agents working in a project)
 
@@ -89,3 +98,9 @@ style.json are where an editor or an agent turns it. Keep meshes small: past `ma
 triangles one is drawn simplified, but a huge file is still read and simplified at every build
 and weighs on the repository — commit a small surface instead
 (`idofig mesh-simplify data/head.ply data/head-50k.ply --faces 50000`).
+
+A render made elsewhere is placed with `idf.image(fig, path, left, bottom, width, height,
+name=...)`, never resampled in the script. EEG topomaps, cortical surfaces and MRI slices are
+drawn with `idofig.neuro` (`topomap`, `surface`, `volume_slice`) rather than re-implemented in a
+project; the project keeps its colours, labels and data loading. A surface's `view=` is only
+where it starts — turn it in style.json.

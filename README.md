@@ -83,6 +83,22 @@ so an editor turns the mesh by writing style.json, and a rebuild draws it from t
 100 000 triangles is drawn simplified to about that many (`max_faces=`, 0.12.0); better, commit a
 small one: `idofig mesh-simplify data/cortex.ply data/cortex-50k.ply --faces 50000`.
 
+A render made elsewhere is placed at its own resolution with `idf.image(fig, "renders/lh.png",
+left, bottom, width, height, name="brain")` (0.13.0): fitted with its aspect kept, a transparent
+background cropped and its dark fringe removed. Topomaps, cortical surfaces and MRI slices come
+from `idofig.neuro` (`pip install "idofig[neuro]"`), every part named by what it is:
+
+```python
+from idofig import neuro
+im = neuro.topomap(ax, t_values, info, mask=cluster)        # topo.field, topo.head, topo.mask …
+neuro.surface(ax3d, "data/lh.inflated", t_map, sulc="data/lh.sulc", threshold=2)  # lh.mesh.left
+neuro.volume_slice(ax, "data/T1.nii.gz", axis="z", at=12, overlay="results/tmap.nii.gz")
+```
+
+For agents: `idofig skill install` puts an `idofig` skill into `~/.claude/skills` (or a project's
+with `--project`) that points to `idofig docs` — this version's `docs/agents.md`, `producers.md`
+and `SPEC.md` — so an agent reads the docs of the idofig the project actually runs.
+
 ## figure.json (schema 2, or 3)
 
 ```json

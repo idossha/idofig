@@ -76,6 +76,54 @@ graphics, so it is what makes a figure reproducible.
    `proj` on the 3D axes in style.json turn it (`idofig style fig-3 brain main elev=10
    azim=-90`). `idofig add-panel fig-3 brain --mesh data/cortex.ply` writes such a producer.
 
+   A render made elsewhere (Blender, PyVista, a nilearn screenshot, a micrograph) is data too:
+   list it in `inputs` and place it with `idf.image(fig, "results/renders/lh.png", left, bottom,
+   width, height, name="brain")` (mm, as `axes_mm`). It is fitted with its aspect kept, embedded
+   with its own pixels, and a transparent background is cropped and loses its dark fringe; the
+   part is `brain.image`. Do not resample a render to fit: render it at the resolution it prints.
+
+   Neuroscience panels come from `idofig.neuro` (`pip install "idofig[neuro]"`), each drawn on an
+   axes you made and named, its parts named by what they are:
+
+   ```python
+   from idofig import neuro
+   ax = idf.name(idf.axes_mm(fig, 2, 2, 24, 24), "topo")
+   im = neuro.topomap(ax, t_values, info, mask=cluster)   # topo.field, topo.head, topo.mask …
+   ax = fig.add_subplot(projection="3d"); idf.name(ax, "lh")
+   neuro.surface(ax, "data/lh.inflated", t_map, sulc="data/lh.sulc", threshold=2.0,
+                 vmin=-5, vmax=5, view="lateral")         # lh.mesh.left
+   ax = idf.name(idf.axes_mm(fig, 30, 2, 30, 36), "axial")
+   neuro.volume_slice(ax, "data/MNI152_T1_1mm.nii.gz", axis="z", at=12,
+                      overlay="results/ratio.nii.gz", roi="data/roi.nii.gz")
+   ```
+
+   Keep your lab's colours, condition names and data loading in the project; these helpers only
+   draw. A surface's `view` is where it starts; turn it in style.json like any mesh. A topomap's
+   colour scale is centred on zero unless you pass `vlim`; give one `vlim` to every map that
+   shares a colorbar.
+
+   What else `idofig.neuro` carries (SPEC.md, *Images and neuroscience panels*):
+
+   | for | call |
+   |---|---|
+   | several views of a cortex at one scale | `neuro.surface_views(fig, l, b, w, h, {"left": lh, "right": rh}, values, views=..., tags=True)` |
+   | your own layout of views | `neuro.view_size(surf, view)` sizes the box; `neuro.surface(ax, ...)` fills it |
+   | both hemispheres from below or above | `neuro.surface(ax, [lh, rh], [lv, rv], view="ventral")` |
+   | a region's border on the cortex | `neuro.surface(..., outline=mask, outline_color="white")` |
+   | a medial wall in its own grey | `neuro.surface(..., background="#C9C9C9")` with NaN there |
+   | per-parcel values | `neuro.parcel_values("lh.aparc.annot", {"insula": 0.4})` |
+   | a volume on the cortex | `neuro.volume_to_surface(("groupmean.nii.gz", k), "lh.central.gii", cortex="lh.mask")` |
+   | a slice through a target | `at=neuro.centroid(roi, side="left")[2]`, `crosshair=`, `orientation=`, `coordinate=`, `extent=` |
+   | a profile along the crosshair | `neuro.line_profile(field, through=target, axis="x")` |
+   | one volume of a 4-D group file | `("groupmean.nii.gz", k)` wherever a volume goes |
+   | electrodes on a render or a cap | `neuro.electrodes(ax, xy, names, colors=..., signs=...)` (on `idf.image`, `xy` in the file's pixels) |
+   | labels with leaders on a brain | `neuro.callouts(fig, neuro.project(ax3d, points), labels)` |
+
+   A 3D axes draws in a square: a fitted surface makes its axes the square around the box you
+   gave it and fills the box, so neighbouring views may overlap their (invisible) squares. Place
+   surfaces with `idf.axes_mm` on a `layout=None` panel: a constrained layout moves an axes after
+   the surface was fitted to it.
+
 4. **Be deterministic.** Seed every random generator; do not print timestamps into the
    figure; read inputs from files, not from the network. Keep to the bundled font (the
    default) or one that ships with matplotlib (DejaVu Sans Mono, say); any other font is

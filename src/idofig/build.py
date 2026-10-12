@@ -575,6 +575,14 @@ def current_versions() -> dict:
             out[pkg] = md.version(pkg)
         except md.PackageNotFoundError:
             pass
+    # What draws an idofig.neuro panel (0.13.0), when the producer imported it: its interpolation
+    # and its file readers are part of what the panel's bytes depend on.
+    for pkg in ("mne", "nibabel"):
+        if pkg in sys.modules:
+            try:
+                out[pkg] = md.version(pkg)
+            except md.PackageNotFoundError:
+                pass
     return out
 
 
