@@ -982,3 +982,46 @@ they are clipped to their axes, and matplotlib reports their box unclipped (a co
 idofig measures is clipped; one matplotlib gives is not). Letters are not
 checked against `maxFontPt`: no preset states a panel-label size, and labels are set larger
 than the text they label; a journal that states no floor is silent about letters (D4).
+
+## The server (`idofig serve`)
+
+`idofig serve` speaks JSON-RPC 2.0 over stdio, one JSON object per line (a line that is not
+strict JSON, one holding `NaN`, `Infinity` or `1e999` included, is answered with error -32700,
+one that is not an object, a batch say, with -32600, and the server goes on). An application
+keeps one server per project, so composing takes milliseconds rather than a Python
+start-up; SUNA embeds idofig this way. `idofig rpc METHOD '{"param": …}'` calls one method
+once, through the same code, and prints `{result}` or `{error}`. Every method
+(`src/idofig/serve.py`):
+
+| method | params | what it does |
+|---|---|---|
+| `hello` | | version, root, figures dir, journal, python |
+| `workspace` | | every figure: document, manifests, styles, status, journal findings |
+| `figure` | `figure` | one figure, as in `workspace` |
+| `status` | `figures?` | figure statuses |
+| `compose` | `figure` | writes figure.svg; the compose result |
+| `build` | `figures?, only?, force?, include_expensive?, retry_failed?, timeout?` | queues a build; streams `event` notifications and answers with the build report |
+| `cancel` | | stops the running build and drops the queued ones |
+| `update_figure` | `figure, ops` | applies [edit operations](#edit-operations) and recomposes |
+| `update_style` | `figure, panel, part, props` | merges `props` into a part's overrides (a `null` value removes one; `props: null` resets the part) |
+| `update_panel_style` | `figure, panel, props` | sets style.json's panel-wide keys — `layout` {hspace_mm, wspace_mm, pad_mm} (merged; `null` removes), `trim`, `trim_mm`; answers like `update_style` |
+| `move_style` | `figure, panel, from, to` | re-attaches a detached override to a part's new name |
+| `restore` | `path, text, expect_sha` | undo: puts a figure.json or style.json back, only if unchanged since; answers the text it replaced (for redo) |
+| `new_figure` | `figure, width?, extra?` | creates a figure (`extra`: application keys) |
+| `add_panel` | `figure, panel, template?, script?, image?, place?, letter?, mesh?` | adds a drawn panel (and a producer), or an image panel; `mesh` (a project mesh file) writes the `mesh` template's producer with the file in its `inputs` |
+| `check` | `figures?, run?` | CI's verdict: fresh, reproducible, within the journal's rules |
+| `parts` | `figure, panel` | the panel's manifest parts |
+| `locate` | `figure, panel, part` | candidate code lines that make the part |
+| `journal` | | the project's journal preset, resolved |
+| `journals` | | the bundled journal presets |
+| `props` | | the style property table, per part kind, and the properties refused by part role |
+| `validate_style` | `kind, props, group?, role?` | problems with setting `props` on a part of `kind` (and the manifest's `role`; empty: valid) |
+| `shutdown` | | stops the server |
+
+The server announces itself with a `ready` event. A build streams `build.start`,
+`producer.start`, `producer.output`, `producer.skipped`, `producer.done`, `figure.composed`
+and `build.done`; builds queue behind each other rather than refuse. Edits answer the text
+they replaced (`before`) and the new file's sha256 (`after_sha`), which is what `restore`
+takes. A failed method answers an error with `data.type`, and `data.problems` when a file
+would be invalid.
+
