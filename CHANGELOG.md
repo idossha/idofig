@@ -4,6 +4,32 @@ What changed for people who make figures with idofig, newest first. The format f
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow `src/idofig/_version.py`.
 Releases before 0.7.0 are described in their commit messages (`git log`) and in SPEC.md.
 
+## [0.14.0] — unreleased
+
+### Added
+
+- **Arrows, lines on the figure and inset axes can be selected, moved, scaled and restyled.** An
+  arrow drawn with `ax.annotate(..., arrowprops=...)` is now a part of its own
+  (`main.text.peak.arrow`, or `main.arrow0` when the annotation has no words). So is anything a
+  script adds to the figure itself — `fig.add_artist(Line2D(...))`, a `ConnectionPatch` between two
+  axes — as `line0`, `patch0` or `series.<label>`. An inset axes (`ax.inset_axes`) is an axes
+  like any other, `main.inset0` or the name `idf.name(ins, "zoom")` gives it, with everything in
+  it named under it. Each takes the same `dx_mm`, `dy_mm`, `scale`, `rotate` and style
+  properties as any other part of its kind. Before, none of them had a name, so an editor could
+  not click one and a style.json entry could not reach it.
+
+### Changed
+
+- **Panels are rebuilt once after upgrading.** The new names are written when a panel is drawn, so
+  every panel reads as stale until its next build. A panel with none of these artists comes out
+  byte for byte as before, apart from the render number in its manifest.
+
+### Fixed
+
+- **An inset axes moved by `dx_mm`/`dy_mm` lands where it was asked to.** It was moved from the box
+  it was created with rather than the one it was drawn in, so a 3 mm move landed 7 mm away and
+  changed its size. An inset whose host axes moves in the same build now moves with it.
+
 ## [0.13.0] — unreleased
 
 ### Added

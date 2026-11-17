@@ -752,8 +752,10 @@ def _measure(fig, table, sreport, height_pt: float, mats: dict, hosts: dict) -> 
             entry["base"] = sreport.base[n]
         parts[n] = entry
 
+    from .naming import all_axes
+
     axes = {}
-    for ax in fig.axes:
+    for ax in all_axes(fig):
         an = table.axes_names.get(id(ax))
         if an:
             axes[an] = _axes_info(ax, renderer, height_pt, {id(ax): (ax, *hosts[an])} if an in hosts else {})

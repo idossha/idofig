@@ -24,7 +24,7 @@ import numpy as np
 from matplotlib.collections import PathCollection
 from matplotlib.lines import Line2D
 
-from .naming import PartTable
+from .naming import PartTable, all_axes
 
 # Values a series carries in the manifest, and marks a series names one by one in panel.svg. A
 # 1000-point scatter adds 62 kB to its manifest and 44 kB to its panel.svg (measured, 0.10.0);
@@ -277,9 +277,9 @@ def build_steps(fig, table: PartTable, parts: dict) -> list[dict]:
     colorbars, then free text. Each step names parts (or groups) of the manifest; the figure's
     background and what is drawn inside a listed part (tick labels in an axis, entries in a
     legend, a group's members) are in no step of their own."""
-    order = {id(ax): k for k, ax in enumerate(fig.axes)}
-    by_name = {table.axes_names[id(ax)]: ax for ax in fig.axes if id(ax) in table.axes_names}
-    child = {id(a): k for ax in fig.axes for k, a in enumerate(ax.get_children())}
+    order = {id(ax): k for k, ax in enumerate(all_axes(fig))}
+    by_name = {table.axes_names[id(ax)]: ax for ax in all_axes(fig) if id(ax) in table.axes_names}
+    child = {id(a): k for ax in all_axes(fig) for k, a in enumerate(ax.get_children())}
     grouped = {m for p in table.parts.values() if p.group and p.role in ("series", "grid") for m in p.members}
 
     def artists(part):

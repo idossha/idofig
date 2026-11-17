@@ -22,8 +22,9 @@ must not change a byte of it. Which source draws it depends on why it is regener
 
 It writes ``panel.svg``, ``manifest.json`` and ``versions.json`` (the idofig that drew them,
 and the matplotlib and numpy the bytes depend on) beside itself. The committed files were
-drawn by idofig 0.12.0 (render 6: a mesh over ``max_faces`` drawn simplified; this panel has
-none, so only its ``render`` changed from 0.11.0's render 5, a 3D axes' role and view, and
+drawn by idofig 0.14.0 (render 7: annotation arrows, figure-level artists and inset axes are
+parts; this panel has none, so only its ``render`` changed from 0.12.0's render 6, a mesh over
+``max_faces`` drawn simplified, 0.11.0's render 5, a 3D axes' role and view, and
 0.10.0's render 4, data semantics); its ``panel.svg`` is byte for byte the one
 0.2.2 (commit 99a8790) drew but for the ``data-index``/``data-value``/``data-key`` attributes
 0.10.0 puts on its three bars, and 0.6.0, 0.7.0 and 0.8.0 changed only the manifest (an axes'

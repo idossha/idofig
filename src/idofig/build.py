@@ -58,8 +58,12 @@ LOCK_SCHEMA = 1
 # changed with no input changed: unbumped, `check` failed it as not reproducible); a gid'd axes
 # has its role, not `author`. 6, 0.12.0: a mesh of more than 100 000 faces is drawn simplified
 # (`idofig.mesh(max_faces=)`), and a mesh part's manifest carries `file_faces`/`file_vertices`:
-# a mesh panel drawn by 0.11.0 is drawn otherwise with no input changed.
-RENDER = 6
+# a mesh panel drawn by 0.11.0 is drawn otherwise with no input changed. 7, 0.14.0: an
+# annotation's arrow, what a script draws on the figure itself and an inset axes with everything
+# in it are parts — their groups in panel.svg take ids and the manifest lists them, so a panel
+# with any of them is drawn otherwise with no input changed (and only a rebuild gives a canvas
+# their names).
+RENDER = 7
 
 
 def drawn_under(manifest: dict) -> int:

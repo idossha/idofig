@@ -22,7 +22,19 @@ spines, axis, background              ``main.spine.left``, ``main.xaxis``,      
 free text                             ``main.text.<text>``                             semantic
 colorbar (``idofig.colorbar``)        ``cbar.<name>`` (its axes), ``cbar.<name>.solids`` named
 unlabelled artists                    ``main.line0``, ``main.patch3`` …                 positional
+an annotation's arrow (0.14.0)        ``main.text.<text>.arrow``; without words,       semantic /
+                                      ``main.arrow0`` …                                positional
+an inset axes (0.14.0)                ``idofig.name(ins, "zoom")`` → ``zoom``,          named /
+                                      otherwise ``main.inset0`` …                      positional
+drawn on the figure itself (0.14.0)   ``series.<label>``, ``line0``, ``patch0``,        semantic /
+                                      ``coll0``, ``image0``                            positional
 ====================================  ==============================================  ============
+
+Every drawn line, patch, collection, image and text has a name (0.14.0): before, an arrow
+drawn with ``ax.annotate``, a line or arrow added to the figure (``fig.add_artist``) and
+everything in an inset axes had none, so no canvas could select one and no style.json entry
+could move it. What still has none is what matplotlib draws as a compound with no single kind:
+a table, an ``AnnotationBbox``.
 
 A 3D axes' z axis is named like x and y: ``main.zlabel``, ``main.zaxis``, ``main.ztick.<text>``;
 its axes have the role ``axis3d``, and the 3D axes itself the role ``axes3d`` (0.11.0). A mesh
@@ -198,6 +210,63 @@ def axis_letters(ax: Axes) -> list[tuple[Axis, str]]:
     return out
 
 
+def all_axes(fig: Figure) -> list[Axes]:
+    """Every axes of a figure: ``fig.axes``, each followed by its inset axes (``ax.inset_axes``,
+    which matplotlib keeps as the host's children, not in ``fig.axes``), insets of insets too.
+    Before 0.14.0 an inset and everything drawn in it had no name."""
+    out: list[Axes] = []
+
+    def walk(ax: Axes) -> None:
+        out.append(ax)
+        for child in getattr(ax, "child_axes", []):
+            walk(child)
+
+    for ax in fig.axes:
+        walk(ax)
+    return out
+
+
+def host_axes(fig: Figure) -> dict[int, Axes]:
+    """``{id(inset): its host axes}`` for every inset axes of a figure."""
+    return {id(child): ax for ax in all_axes(fig) for child in getattr(ax, "child_axes", [])}
+
+
+def _name_arrow(t: PartTable, text: Any, p: str | None, count: list[int]) -> None:
+    """An annotation's arrow (``ax.annotate(..., arrowprops=…)``) is a part of its own: named
+    after its words when it has any (``main.text.peak.arrow``), else by order (``main.arrow0``).
+    matplotlib draws it outside the text's group, so the text's name never reached it."""
+    arrow = getattr(text, "arrow_patch", None)
+    if arrow is None or t.claimed(arrow):
+        return
+    gid = _author_gid(arrow)
+    words = t.by_artist.get(id(text))
+    if gid:  # arrowprops={"gid": …}: `findobj` does not reach an annotation's arrow
+        t.add(gid, arrow, "arrow", "author", p, author=True)
+    elif words:
+        t.add(f"{words}.arrow", arrow, "arrow", "semantic", p)
+    else:
+        t.add(f"{p}.arrow{count[0]}" if p else f"arrow{count[0]}", arrow, "arrow", "positional", p)
+        count[0] += 1
+
+
+def _name_figure_artists(t: PartTable, fig: Figure) -> None:
+    """What a script draws on the figure itself (``fig.add_artist(Line2D(…))``, a
+    ``ConnectionPatch`` between two axes, ``fig.figimage``): by its label when it has one
+    (``series.<label>``), else by kind and order (``line0``, ``patch0``)."""
+    counters = {"line": 0, "collection": 0, "patch": 0, "image": 0}
+    prefix = {"line": "line", "collection": "coll", "patch": "patch", "image": "image"}
+    for artist in [*fig.lines, *fig.patches, *fig.images, *fig.artists]:
+        k = kind_of(artist)
+        if k not in counters or t.claimed(artist):
+            continue
+        lab = _label(artist)
+        if lab:
+            t.add(f"series.{slug(lab)}", artist, "series", "semantic")
+        else:
+            t.add(f"{prefix[k]}{counters[k]}", artist, k, "positional")
+            counters[k] += 1
+
+
 def assign_structural(fig: Figure) -> PartTable:
     """Name everything that exists before the first draw (ticks come later)."""
     t = PartTable()
@@ -221,25 +290,39 @@ def assign_structural(fig: Figure) -> PartTable:
         text = getattr(fig, attr, None)
         if text is not None and text.get_text():
             t.add(name, text, name, "semantic")
+    arrows = [0]
     for text in fig.texts:
         if text.get_text():
             t.add(f"text.{slug(text.get_text())}", text, "text", "semantic")
+        _name_arrow(t, text, None, arrows)
+    _name_figure_artists(t, fig)
     for k, legend in enumerate(fig.legends):
         _name_legend(t, legend, "legend" if k == 0 else f"legend{k + 1}", None)
 
     index = 0
     cbar_index = 0
-    for ax in fig.axes:
+    hosts = host_axes(fig)
+    insets: dict[int, int] = {}
+    for ax in all_axes(fig):
         # A 3D axes is its own role (0.11.0): only it takes a view (props.VIEW).
         role = "axes3d" if getattr(ax, "name", None) == "3d" else "axes"
+        # An inset's parent is its host: the host's move, scale and turn carry it.
+        host = t.axes_names.get(id(hosts[id(ax)])) if id(ax) in hosts else None
         if _author_gid(ax):
             name = _author_gid(ax)
             # A gid names it; its role is still what it is (left "author", a gid'd 2D axes took
             # a view and a gid'd 3D one was offered none).
-            t.add(name, ax, "colorbar" if _is_colorbar_axes(ax) else role, "author", kind="axes")
+            t.add(name, ax, "colorbar" if _is_colorbar_axes(ax) else role, "author", host, kind="axes")
+            if host and name in t.parts:
+                t.parts[name].parent = host  # claimed by its gid before its host had a name
         elif getattr(ax, "_idofig_name", None):
             name = ax._idofig_name
-            t.add(name, ax, role, "named", kind="axes")
+            t.add(name, ax, role, "named", host, kind="axes")
+        elif host:
+            k = insets.get(id(hosts[id(ax)]), 0)
+            insets[id(hosts[id(ax)])] = k + 1
+            name = f"{host}.inset{k}"
+            t.add(name, ax, role, "positional", host, kind="axes")
         elif _is_colorbar_axes(ax):
             cbar = ax._colorbar
             given = getattr(cbar, "_idofig_name", None)
@@ -249,7 +332,7 @@ def assign_structural(fig: Figure) -> PartTable:
         else:
             name = f"ax{index}"
             t.add(name, ax, role, "positional", kind="axes")
-        if not _is_colorbar_axes(ax):
+        if not _is_colorbar_axes(ax) and id(ax) not in hosts:
             index += 1
         t.axes_names[id(ax)] = name
         _name_axes_contents(t, ax, name)
@@ -388,9 +471,11 @@ def _name_axes_contents(t: PartTable, ax: Axes, p: str) -> None:
                 t.parts[name].container = c
                 bars += 1
 
+    arrows = [0]
     for text in ax.texts:
         if text.get_text() and not t.claimed(text):
             t.add(f"{p}.text.{slug(text.get_text())}", text, "text", "semantic", p)
+        _name_arrow(t, text, p, arrows)
     legend = ax.get_legend()
     if legend is not None:  # with a gid too: skipped, it kept the role "author" and its entries no name
         _name_legend(t, legend, f"{p}.legend", p)
@@ -417,7 +502,7 @@ def _drawn_ticks(axis) -> list:
 def assign_ticks(fig: Figure, t: PartTable) -> None:
     """Name major tick labels by their text, and major gridlines by their tick's (0.10.0). Call
     after a draw, when ticks exist."""
-    for ax in fig.axes:
+    for ax in all_axes(fig):
         p = t.axes_names.get(id(ax))
         if p is None:
             continue
@@ -460,7 +545,7 @@ def legend_series(fig: Figure, t: PartTable) -> None:
     joined to nothing: matching on the text alone joined an entry to whichever series happened
     to share its words.
     """
-    legends = [(ax.get_legend(), [ax]) for ax in fig.axes] + [(lg, fig.axes) for lg in fig.legends]
+    legends = [(ax.get_legend(), [ax]) for ax in all_axes(fig)] + [(lg, fig.axes) for lg in fig.legends]
     for legend, axes in legends:
         if legend is None:
             continue

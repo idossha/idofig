@@ -49,7 +49,9 @@ project also read SUNA's `FIGURES.md` (the `suna` skill says where).
 
 One directory per figure; producers draw panels at printed size (`idf.panels`); NAME every
 axes (`idf.name`, dotted prefixes for groups: `row1.brain.view0…3`), every series (`label=`),
-every free text (`gid=`); `layout="constrained"` when spacing should stay adjustable,
+every free text (`gid=`), every inset axes (`idf.name(ins, "zoom")`) and any arrow that should keep its
+name (`arrowprops={"gid": …}`; unnamed, an `ax.annotate` arrow is `main.text.<text>.arrow` or the
+positional `main.arrow0`, and a line or arrow on the figure `line0`/`patch0`, ≥ 0.14); `layout="constrained"` when spacing should stay adjustable,
 `layout=None` + `idf.axes_mm` when geometry must be exact; geometry in named constants.
 Refinement ladder — first rung that works: style.json restyle/nudge → `layout` spacing →
 `trim` → axes/group move → figure.json placement → split into panels → (optional, settled

@@ -26,7 +26,7 @@ from matplotlib.text import Annotation
 from matplotlib.transforms import ScaledTranslation
 
 from . import props as P
-from .naming import PartTable, axis_letters, kind_of
+from .naming import PartTable, all_axes, axis_letters, host_axes, kind_of
 from .units import MM_PER_IN
 
 
@@ -486,6 +486,18 @@ def apply_offsets(fig, moves: list[tuple[Any, float, float]], undo: Undo) -> Non
     time, in the drawing's own dpi."""
     _freeze(fig, undo)
     moved_axes: set[int] = set()
+    # A moved inset is taken off its locator (`_move_axes`), which is what made it follow its
+    # host: it takes its hosts' moves too, or a host moved in the same save left it behind.
+    hosts, by_axes = host_axes(fig), {id(a): (dx, dy) for a, dx, dy in moves if isinstance(a, Axes)}
+
+    def with_hosts(artist, dx: float, dy: float) -> tuple[Any, float, float]:
+        host = hosts.get(id(artist))
+        while host is not None:
+            hx, hy = by_axes.get(id(host), (0.0, 0.0))
+            dx, dy, host = dx + hx, dy + hy, hosts.get(id(host))
+        return artist, dx, dy
+
+    moves = [with_hosts(*m) if isinstance(m[0], Axes) else m for m in moves]
     # Axes first: a moved legend's anchor is read where its axes already is.
     for artist, dx, dy in sorted(moves, key=lambda m: not isinstance(m[0], Axes)):
         dx_in, dy_in = dx / MM_PER_IN, -dy / MM_PER_IN
@@ -524,13 +536,17 @@ def _move_axes(ax, dx_in: float, dy_in: float, fig, undo: Undo, moved: set[int])
     if any(id(t) in moved for t in twins):
         return
     moved.update(id(t) for t in twins)
+    # Where the save drew it, read while its locator is still on: without one, `get_position`
+    # goes back to the box the axes was made with, and an inset moved 3 mm landed 7 mm away at
+    # another size (0.14.0, the first release in which an inset is a part that can move).
+    drawn = ax.get_position()
     for t in twins:
         undo.callback(t.set_axes_locator, t.get_axes_locator())
         undo.callback(t._set_position, t.get_position(original=True), "original")
         undo.callback(t._set_position, t.get_position(), "active")
         t.set_axes_locator(None)
     w_in, h_in = fig.get_size_inches()
-    ax._set_position(ax.get_position().translated(dx_in / w_in, dy_in / h_in), "both")  # its twins too
+    ax._set_position(drawn.translated(dx_in / w_in, dy_in / h_in), "both")  # its twins too
 
 
 def axes_transforms(fig) -> dict[int, tuple[Any, tuple[float, ...], float]]:
@@ -542,7 +558,7 @@ def axes_transforms(fig) -> dict[int, tuple[Any, tuple[float, ...], float]]:
     the save's draw; the transform is on the axes' group (``svgpost.transform_groups``)."""
     w_pt, h_pt = fig.get_figwidth() * 72, fig.get_figheight() * 72
     out: dict[int, tuple[Any, tuple[float, ...], float]] = {}
-    for ax in fig.axes:
+    for ax in all_axes(fig):
         if id(ax) in out:
             continue
         twins = ax._twinned_axes.get_siblings(ax)
@@ -615,7 +631,7 @@ def _freeze(fig, undo: Undo) -> None:
     engine = fig.get_layout_engine()
     fig.set_layout_engine("none")  # a placeholder that keeps the engine's colorbar layout, so it goes back
     undo.callback(fig.set_layout_engine, engine if engine is not None else "none")
-    for ax in fig.axes:
+    for ax in all_axes(fig):
         undo.set(ax, "_autotitlepos", False)  # the positions the save computed, in axes fractions
         for legend in ax.get_children():
             if not isinstance(legend, Legend) or legend._loc != 0 or not legend.get_visible():  # 0: "best"
@@ -661,7 +677,7 @@ def tick_params_from_style(fig, table: PartTable, style: dict) -> None:
     """Tick-label wildcards (``main.xtick.*``) are applied through ``tick_params`` before the
     first draw, so layout accounts for them even though tick labels do not exist yet."""
     for pattern, props in style.get("parts", {}).items():
-        for ax in fig.axes:
+        for ax in all_axes(fig):
             p = table.axes_names.get(id(ax))
             if p is None:
                 continue

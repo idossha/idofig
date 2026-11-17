@@ -50,6 +50,11 @@ graphics, so it is what makes a figure reproducible.
 3. **Label what matters.** Give every series a `label=` (it becomes `main.series.<label>`
    and its legend key), put text in axis labels and titles, and use `gid=` for anything else
    a person might want to restyle on the canvas. Unlabelled artists get positional names.
+   An arrow drawn with `ax.annotate` is a part too (`main.text.peak.arrow`; with no words,
+   the positional `main.arrow0` — pass `arrowprops={"gid": "pointer", ...}` for one that
+   should keep its name), as is a line or arrow added to the figure (`line0`, `patch0`, or
+   `series.<label>` with a `label=`) and an inset axes: name it, `idf.name(ins, "zoom")`,
+   rather than leaving it the positional `main.inset0` (0.14.0).
    Make colorbars with `idf.colorbar(mappable, name="value", ax=ax)`: its axes becomes
    `cbar.value` rather than a positional `cbar0`. Mark heavy layers (dense meshes, thousands
    of points) `rasterized=True`: a labelled one keeps its name, as an image the canvas can

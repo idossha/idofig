@@ -384,6 +384,22 @@ a mesh, `<axes>.mesh.<name>`. A gid on
 such a part still wins, and a second part of one name on an axes is `….2`, positional, and
 reported.
 
+**Arrows, figure artists, insets (0.14.0).** Every drawn line, patch, collection, image and
+text is a part. An annotation's arrow (`ax.annotate(…, arrowprops=…)`) is one of its own, role
+`arrow`, kind `patch`, beside its words and not inside them (matplotlib draws it outside the
+text's group, and the words move without it): `main.text.<text>.arrow`, `semantic`, or — an
+arrow with no words — `main.arrow0`, `main.arrow1`, … `positional`; a `gid` in `arrowprops`
+wins. What a script draws on the figure itself (`fig.add_artist(Line2D(…))`, a
+`ConnectionPatch` between two axes, `fig.figimage`) is `series.<label>` when it has a label,
+else `line0`, `patch0`, `coll0`, `image0` by kind and order, with no parent. An inset axes
+(`ax.inset_axes`) is an axes like any other, with its host as its `parent` — `idofig.name(ins,
+"zoom")` → `zoom`, else `<host>.inset0`, … `positional` — and its contents are named under it
+(`main.inset0.line0`, `main.inset0.xtick.0-5`); the manifest's `axes` lists it, so an
+annotation can anchor to its data. A host's `dx_mm`/`dy_mm`, `scale` and `rotate` carry its
+insets; an inset's own move adds to its hosts'. Before 0.14.0 none of these had a name: no
+canvas could select one and no style.json entry reached it. Still unnamed: what matplotlib
+draws as a compound with no one kind — a table, an `AnnotationBbox`.
+
 A rasterized part (`rasterized=True`) with a name that is not positional — an author gid, a
 label, a colorbar's solids — keeps it in the SVG: its `<image>` is wrapped in `<g
 id="<name>">`, one image per such part. Positional rasterized parts (`main.line0` …) merge
